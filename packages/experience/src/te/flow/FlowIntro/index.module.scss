@@ -1,0 +1,12 @@
+/* TE:BEGIN account-flow */
+
+.intro {
+  margin: -4px 0 22px;
+  color: var(--color-type-secondary);
+  font: var(--font-body-2);
+  /* `pretty` evita que la última línea quede con una sola palabra colgando, que es lo
+     que más delata un texto sin cuidar. */
+  text-wrap: pretty;
+}
+
+/* TE:END account-flow */

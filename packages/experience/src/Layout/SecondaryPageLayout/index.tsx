@@ -6,6 +6,7 @@ import usePlatform from '@/hooks/use-platform';
 import DynamicT from '@/shared/components/DynamicT';
 import NavBar from '@/shared/components/NavBar';
 import PageMeta from '@/shared/components/PageMeta';
+import FlowProgress from '@/te/flow/FlowProgress'; // TE:account-flow
 
 import { InlineNotification } from '../../components/Notification';
 
@@ -49,6 +50,9 @@ const SecondaryPageLayout = ({
         <InlineNotification message={notification} className={styles.notification} />
       )}
       <div className={styles.container}>
+        {/* TE:BEGIN account-flow — no pinta nada fuera del alta */}
+        <FlowProgress />
+        {/* TE:END account-flow */}
         <div className={styles.header}>
           <div className={styles.title}>
             <DynamicT forKey={title} interpolation={titleProps} />

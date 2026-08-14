@@ -1,0 +1,404 @@
+/*
+ * TE:BEGIN account-flow
+ *
+ * Tema visual del flujo de ALTA. Archivo nuevo: no toca nada de upstream, así que no
+ * puede dar conflicto en un merge.
+ *
+ * ## Cómo funciona
+ *
+ * Toda la experiencia de Logto se pinta con variables CSS (`--color-*`, `--font-*`),
+ * definidas en `shared/scss/_colors.scss` y `_fonts.scss`. Aquí no se reescribe ningún
+ * componente: se **redefinen esas variables** bajo una clase de ámbito que `AppLayout`
+ * añade solo en las rutas de registro. Cambiar el aspecto sin tocar el marcado es lo que
+ * mantiene intacta la reactividad a la configuración de la consola: si mañana se activa o
+ * desactiva un método desde el panel, esta hoja no se entera ni le hace falta.
+ *
+ * Cuando el mismo tema deba aplicarse al acceso, se sustituye `.te-flow-register` por
+ * `:root` y se borra la clase de `AppLayout`. No hay más que deshacer.
+ *
+ * ## Reglas de enganche — se comprobaron en el navegador, no se dedujeron
+ *
+ * Este archivo es SCSS **global**, no un `.module.scss`. Consecuencias:
+ *
+ * - Nada de `:global(...)`: esa sintaxis solo existe en CSS Modules. En una hoja global
+ *   se queda literal y el selector no casa nunca.
+ * - `body.desktop` / `body.mobile` SÍ se pueden usar: Logto las escribe sin hashear.
+ * - `body.dark` NO: viene de CSS Modules y en el navegador es `__GsPfC__dark`, un nombre
+ *   que cambia en cada build. El tema se detecta con `html[data-theme='dark']`, que es
+ *   lo que fija `PageContextProvider` y sí es estable.
+ * - `.logto_main-content` y `.logto_page-container` son clases globales estables
+ *   (`utils/consts.ts` → `layoutClassNames`). Son el gancho previsto por Logto.
+ *
+ * ## Qué NO se toca aquí
+ *
+ * - El color de marca: sale de `primaryColor` de la consola vía `use-color-theme.ts`,
+ *   que genera `--color-brand-*` sobre `document.body`. Fijarlo aquí rompería la
+ *   configuración.
+ * - La estructura del campo de texto (`NotchedBorder`). Queda para más adelante.
+ */
+
+/* stylelint-disable selector-class-pattern -- El proyecto exige clases sin guion, una
+   regla pensada para los nombres locales de CSS Modules. Esta hoja es global y tiene que
+   nombrar las clases globales del propio Logto (`logto_main-content`,
+   `logto_branding-header`), que sí llevan guion. Renombrarlas no está en nuestra mano. */
+
+/* ── Tokens · tema claro ─────────────────────────────────────────────────── */
+
+.te-flow-register {
+  /* Tinta: grises con sesgo violeta, para que casen con el lienzo lavanda en vez
+     del gris azulado neutro de Logto. */
+  --color-type-primary: #16151c;
+  --color-type-secondary: #5f5d6b;
+  --color-type-disable: rgba(22, 21, 28, 38%);
+
+  /* Superficies. `bg-float` es la tarjeta en escritorio; `bg-body` el lienzo y
+     también la tarjeta en móvil, donde ocupa la pantalla entera. */
+  --color-bg-body: #fff;
+  --color-bg-float: #fff;
+  --color-bg-layer-1: #fff;
+  --color-bg-layer-2: #f6f5f9;
+
+  --color-line-divider: rgba(22, 21, 28, 10%);
+  --color-line-border: #cecbd8;
+
+  /* Tipografía: más aire que la escala nativa. El título sube de 24 a 27px y la
+     interlínea se abre — es la mitad de la sensación de "limpio". */
+  --te-font-family:
+    -apple-system,
+    blinkmacsystemfont,
+    'Segoe UI',
+    system-ui,
+    roboto,
+    'Helvetica Neue',
+    arial,
+    sans-serif;
+  --font-headline-1: 650 27px/34px var(--te-font-family);
+  --font-headline-2: 650 27px/34px var(--te-font-family);
+  --font-body-2: 400 14.5px/21px var(--te-font-family);
+  --font-label-1: 550 16px/24px var(--te-font-family);
+
+  /* Forma */
+  --te-radius-card: 22px;
+  --te-radius-control: 13px;
+  --te-card-width: 420px;
+  --te-shadow-card: 0 1px 2px rgba(22, 21, 28, 4%), 0 12px 32px -12px rgba(22, 21, 28, 16%);
+
+  /* Lienzo: lavanda con un halo radial arriba. Da profundidad sin dibujar nada. */
+  --te-ground: #e7e5ee;
+  --te-ground-glow: #f3f1f7;
+
+  /* Se pinta aquí, en la misma regla que los tokens, para no repetir el selector.
+     Va en `.viewBox`, que ocupa toda la ventana, así el halo no se corta al hacer
+     scroll en pantallas bajas. */
+  background:
+    radial-gradient(1100px 620px at 50% -8%, var(--te-ground-glow), transparent 70%),
+    var(--te-ground);
+}
+
+/* ── Tokens · tema oscuro ─────────────────────────────────────────────────
+   Se deriva del claro conservando el sesgo violeta en vez de invertir sin más:
+   un gris neutro bajo una marca verde se ve sucio. */
+
+[data-theme='dark'] .te-flow-register {
+  --color-type-primary: #f2f1f6;
+  --color-type-secondary: #a3a0b0;
+  --color-type-disable: rgba(242, 241, 246, 38%);
+
+  --color-bg-body: #1e1d26;
+  --color-bg-float: #1e1d26;
+  --color-bg-layer-1: #1e1d26;
+  --color-bg-layer-2: #262532;
+
+  --color-line-divider: rgba(242, 241, 246, 12%);
+  --color-line-border: #3d3b4a;
+
+  --te-ground: #100f16;
+  --te-ground-glow: #191822;
+  --te-shadow-card: 0 1px 2px rgba(0, 0, 0, 24%), 0 16px 40px -16px rgba(0, 0, 0, 56%);
+}
+
+/* ── El logotipo en oscuro ────────────────────────────────────────────────
+   El PNG de marca lleva el texto en tinta oscura, así que sobre fondo oscuro
+   "Tr3s" y "Powered by" desaparecen. Hasta que exista una variante clara para
+   `darkLogoUrl`, se pasa a blanco puro.
+
+   `brightness(0)` aplasta cada píxel a negro conservando el alfa, e `invert(1)`
+   lo sube a blanco: el resultado es una silueta legible con los bordes intactos.
+   Un `invert(1)` a secas rotaría el tono y dejaría el rojo en cian y el verde en
+   magenta — peor que el problema original.
+
+   Provisional: en cuanto haya logo claro, se configura `darkLogoUrl` en la
+   consola y este bloque se borra. */
+
+[data-theme='dark'] .te-flow-register .logto_branding-header img {
+  filter: brightness(0) invert(1);
+}
+
+/* ── La tarjeta ───────────────────────────────────────────────────────────
+   Solo en escritorio: en móvil la tarjeta ES la pantalla, y estrecharla o
+   redondearla dejaría franjas de lienzo a los lados. */
+
+/* La tarjeta se ancla ARRIBA, no al centro.
+
+   Centrada, su alto varía de 470 px (contraseña) a 906 px (el QR del autenticador), y
+   como crece por los dos lados el título se desplaza más de 140 px entre pantallas. El
+   ojo tiene que volver a buscarlo en cada paso y la página parece recargarse.
+
+   Anclada arriba, el título queda SIEMPRE a la misma altura y solo crece el borde
+   inferior. Es la corrección con más impacto de todo el escritorio. */
+body.desktop .te-flow-register .logto_page-container {
+  justify-content: flex-start;
+  padding-top: clamp(48px, 12vh, 120px);
+}
+
+body.desktop .te-flow-register .logto_main-content {
+  /* `min()` y no un ancho fijo: `body.desktop` lo decide el user-agent al cargar, no el
+     tamaño de la ventana. Un escritorio con la ventana estrecha sigue siendo `desktop`, y
+     un ancho fijo desbordaría. Upstream lo cubre con una media query a 580px que esta
+     regla pisaría. */
+  width: min(var(--te-card-width), 100%);
+  /* Altura estable, no `auto`. Es la corrección más importante del escritorio: con
+     `auto` la tarjeta encogía y crecía en cada paso —enorme en el perfil, diminuta en
+     la contraseña— y el conjunto se leía como algo improvisado. Una tarjeta que no se
+     mueve entre pasos es la mitad de la sensación de solidez.
+
+     Upstream usa 540×540; aquí la tarjeta es más estrecha (420), así que 470 mantiene
+     una proporción cercana al áureo en lugar de un cuadrado alargado. */
+  min-height: 470px;
+  padding: 32px;
+  border-radius: var(--te-radius-card);
+  box-shadow: var(--te-shadow-card);
+}
+
+/* ── Ritmo vertical ───────────────────────────────────────────────────────
+   Todo lo de abajo va en múltiplos de 4, la misma rejilla que usa Logto con
+   `_.unit()`. Mezclar rejillas es lo que hace que un formulario se vea "casi
+   bien" sin que se sepa por qué.
+
+   Los selectores van por subcadena porque CSS Modules hashea las clases
+   (`__hash__header`) y el nombre cambia en cada build. Las que empiezan por
+   `logto_` sí son estables: son el gancho que Logto expone a propósito. */
+
+/* Cabecera: el título necesita aire por arriba tras el indicador de progreso, y
+   la descripción tiene que pegarse al título para leerse como una unidad.
+
+   `:has()` en vez de subcadena a secas: la cabecera de la página es el único `div`
+   con "header" que contiene directamente un "title". Sin ese filtro, la regla
+   también pisaba `logto_branding-header` y los títulos de cada fila de MFA. */
+.te-flow-register div[class*='header']:has(> [class*='title']) {
+  margin-bottom: 24px;
+}
+
+.te-flow-register div[class*='header'] > [class*='title'] {
+  letter-spacing: -0.018em;
+  /* `balance` reparte las líneas; `hyphens: none` evita que un guion existente
+     ("2-step") sirva de punto de corte y deje un "2-" colgando. */
+  hyphens: none;
+  text-wrap: balance;
+}
+
+/* La primera pantalla tenía la jerarquía invertida: su título vive dentro de
+   `logto_branding-header` como `headline` a 18 px, mientras todos los demás títulos del
+   flujo están a 27 px. Es decir, el título MÁS importante era el más pequeño, y con el
+   logotipo bicolor encima, la marca pesaba más que la acción — se leía "Tr3sPass" antes
+   que "Crea tu cuenta".
+
+   El logo se contiene a 32 px de alto por el mismo motivo: presente, no protagonista. */
+.te-flow-register .logto_branding-header [class*='headline'] {
+  font: var(--font-headline-2);
+  letter-spacing: -0.018em;
+  text-wrap: balance;
+}
+
+.te-flow-register .logto_branding-header img {
+  max-height: 32px;
+  width: auto;
+}
+
+.te-flow-register div[class*='header'] > [class*='description'] {
+  margin-top: 6px;
+  max-width: 34em;
+  text-wrap: pretty;
+}
+
+/* La barra de navegación se acerca al borde: es cromo, no contenido. */
+.te-flow-register div[class*='navBar'] {
+  margin-bottom: 4px;
+}
+
+/* El hueco muerto bajo "Back".
+
+   Upstream separa el contenido con `margin-block: 48px` en escritorio porque su
+   tarjeta no tiene padding propio en la parte superior. La nuestra sí —32 px—, así
+   que los dos se sumaban y dejaban 80 px de vacío entre "Back" y el primer
+   contenido. Es el espacio que hacía que la tarjeta se viera desequilibrada, con
+   todo el peso abajo.
+
+   El `margin-block` de upstream son 48 px ARRIBA Y ABAJO, así que también dejaba 80 px
+   de vacío bajo el botón primario — separándolo de su propio formulario. Entre los dos
+   huecos se iba el 27 % de una tarjeta de 470 px, colocado en los dos peores sitios.
+
+   20 px arriba basta para separar el cromo del contenido; abajo, ninguno. */
+body.desktop .te-flow-register div[class*='wrapper'] > div[class*='container'] {
+  margin-block: 20px 0;
+}
+
+/* ── Controles ────────────────────────────────────────────────────────────
+   Botón y campo comparten radio: con radios distintos el formulario se lee como
+   dos piezas pegadas en vez de una sola. */
+
+/* ⚠️ Los selectores por subcadena tienen que apuntar a DOS clases, no a una.
+   `[class*='primary']` a secas también casa con los enlaces de texto, que llevan
+   `__hash__link __hash__primary`: les metía `height: 48px` y sombra de botón, y se
+   veían como cajas vacías. Exigir `button` + `primary` es lo que los distingue. */
+
+.te-flow-register .logto_main-content button[class*='button'] {
+  border-radius: var(--te-radius-control);
+  /* 100 ms es el mínimo que impone stylelint, y es buen criterio: por debajo el ojo lo
+     lee como un salto y no como una transición. Para el hundido al pulsar queremos lo
+     más corto que siga leyéndose como movimiento. */
+  transition:
+    background-color 140ms ease,
+    box-shadow 140ms ease,
+    transform 100ms ease;
+}
+
+.te-flow-register .logto_main-content button[class*='button'][class*='primary'] {
+  height: 48px;
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--color-brand-default) 32%, transparent);
+}
+
+/* El botón se hunde un pixel al pulsar. Es el único gesto táctil del formulario y
+   en un WebView, donde no hay hover, es la única confirmación de que el toque
+   se registró antes de que llegue la respuesta del servidor. */
+.te-flow-register .logto_main-content button[class*='button'][class*='primary']:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
+}
+
+/* ⚠️ El borde visible del campo NO lo pinta el `<input>`, sino un `<fieldset>` hermano
+   —así construye `NotchedBorder` la muesca de la etiqueta—. Poner el radio en el
+   `input` no se veía: el campo seguía a 8 px mientras el botón estaba a 13, y con los
+   dos apilados y del mismo ancho, esos 5 px se notan.
+
+   Se ajustan radio y alto, que es estilo. La estructura del `NotchedBorder` no se toca. */
+.te-flow-register .logto_main-content fieldset {
+  border-radius: var(--te-radius-control);
+}
+
+.te-flow-register .logto_main-content input:not([class*='code']) {
+  height: 46px;
+}
+
+/* ── Espaciado de formularios ─────────────────────────────────────────────
+   Logto usa DOS mecanismos según el formulario: `IdentifierProfileForm` separa
+   con `margin-bottom` en cada campo, y `ExtraProfileForm` con `gap` en el flex.
+   Añadir margen encima del gap fue el error que dejaba el perfil con huecos
+   desiguales — 36 px entre unos campos y 16 px entre otros.
+
+   Aquí se unifica en un solo mecanismo: `gap` en el formulario, y se anula el
+   `margin-bottom` de los hijos directos para que no se sumen. Se conserva el
+   `margin-top` porque `formErrors` lo usa en negativo para pegarse a su campo. */
+
+.te-flow-register form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.te-flow-register form > * {
+  margin-bottom: 0;
+}
+
+/* Los dígitos del código son datos, no prosa: tabulares para que no bailen al
+   escribir, y algo más grandes porque son el único contenido de esa pantalla. */
+.te-flow-register [class*='verificationCode'] input,
+.te-flow-register [class*='codeInput'] input {
+  font-variant-numeric: tabular-nums;
+  font-size: 20px;
+}
+
+/* ── Listas de método ─────────────────────────────────────────────────────
+   Las pantallas de MFA y de métodos de verificación son listas de opciones, no
+   formularios. Se leen escaneando, así que cada fila necesita aire propio y un
+   borde que la separe del lienzo sin encerrarla.
+
+   Es el patrón que el usuario ya conoce de elegir cuenta en Google. */
+
+.te-flow-register [class*='factorList'] {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.te-flow-register [class*='mfaFactorButton'] {
+  height: auto;
+  min-height: 64px;
+  padding: 14px 16px;
+  border-radius: var(--te-radius-control);
+  border: 1px solid var(--color-line-divider);
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
+}
+
+/* Sin `:hover` en táctil: en un WebView el estado se quedaría pegado tras el toque. */
+@media (hover: hover) {
+  .te-flow-register [class*='mfaFactorButton']:not([class*='disabled']):hover {
+    border-color: var(--color-brand-default);
+    background: var(--color-overlay-brand-hover);
+  }
+}
+
+/* Una opción no disponible se atenúa, pero conserva borde y alto.
+
+   Upstream la pinta con fondo gris sólido y SIN borde: acababa siendo el elemento con
+   más peso visual de la lista —la vista iba a la opción prohibida en vez de a las
+   disponibles— y los 2 px del borde ausente descuadraban su icono respecto a las demás. */
+.te-flow-register [class*='mfaFactorButton'][class*='disabled'] {
+  border-color: var(--color-line-divider);
+  background: transparent;
+  opacity: 45%;
+}
+
+/* ── El desplegable ───────────────────────────────────────────────────────
+   Upstream lo renderiza `position: static` y sin sombra: al abrirlo empuja los campos
+   de abajo y el botón, la tarjeta crece de golpe, y el panel no se lee como menú sino
+   como una caja pegada bajo el campo. Flotarlo es lo que lo convierte en un control.
+
+   El borde también viene del gris azulado de fábrica; se pasa al token del tema para
+   que no convivan dos grises a 4 px de distancia. */
+
+.te-flow-register [class*='dropdownContainer'] {
+  position: absolute;
+  z-index: 10;
+  margin-top: 6px;
+  border-color: var(--color-line-divider);
+  border-radius: var(--te-radius-control);
+  box-shadow:
+    0 8px 24px -8px rgba(22, 21, 28, 24%),
+    0 2px 6px rgba(22, 21, 28, 6%);
+}
+
+/* ── Foco visible ─────────────────────────────────────────────────────────
+   Obligatorio para teclado, y Logto lo deja al navegador en varios controles.
+   `:focus-visible` no dispara en toque, así que no molesta en móvil. */
+.te-flow-register a:focus-visible,
+.te-flow-register button:focus-visible,
+.te-flow-register [role='button']:focus-visible {
+  outline: 2px solid var(--color-brand-default);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .te-flow-register .logto_main-content button[class*='button'] {
+    transition: none;
+  }
+
+  .te-flow-register .logto_main-content button[class*='button'][class*='primary']:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+/* TE:END account-flow */

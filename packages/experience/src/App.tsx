@@ -58,6 +58,22 @@ import { UserMfaFlow } from './types';
 import 'overlayscrollbars/overlayscrollbars.css';
 import './shared/scss/normalized.scss';
 import './scss/overlayscrollbars.scss';
+/*
+ * TE:BEGIN account-flow
+ *
+ * El tema del alta se importa AQUÍ, al final, y no desde `AppLayout`.
+ *
+ * `AppLayout` se importa arriba, antes que todas las páginas, así que sus estilos
+ * quedaban al principio del bundle y el tema perdía TODOS los empates de especificidad
+ * contra upstream. Verificado en el CSS compilado: la regla del tema quedaba en el byte
+ * ~3.000 y las de las páginas a partir del ~40.000, de modo que reglas como
+ * `form > *` (0,1,1) nunca ganaban a `.X_form .Y_inputField` (0,2,0).
+ *
+ * Junto a las demás hojas globales y después de las páginas, los empates los gana el
+ * fork y desaparece una clase entera de fallos silenciosos.
+ */
+import '@/te/theme/register.scss';
+/* TE:END account-flow */
 
 handleSearchParametersData();
 

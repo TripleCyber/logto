@@ -7,6 +7,7 @@ import { useContext } from 'react';
 import PageContext from '@/Providers/PageContextProvider/PageContext';
 import BrandingHeader from '@/components/BrandingHeader';
 import { getBrandingLogoUrl } from '@/shared/utils/logo';
+import FlowIntro from '@/te/flow/FlowIntro'; // TE:account-flow
 import { layoutClassNames } from '@/utils/consts';
 
 import FirstScreenLayout from '../FirstScreenLayout';
@@ -46,6 +47,9 @@ const LandingPageLayout = ({ children, title, titleInterpolation, thirdPartyBran
           getBrandingLogoUrl({ theme, branding: thirdPartyBranding, isDarkModeEnabled })
         }
       />
+      {/* TE:BEGIN account-flow — solo se monta en /register */}
+      <FlowIntro />
+      {/* TE:END account-flow */}
       {children}
     </FirstScreenLayout>
   );
