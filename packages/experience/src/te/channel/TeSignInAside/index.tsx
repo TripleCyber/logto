@@ -7,8 +7,11 @@ import { LoadingIcon } from '@/shared/components/LoadingLayer';
 
 import TeCountdown from '../TeCountdown';
 import TeQrCanvas from '../TeQrCanvas';
+import TeQrVelado from '../TeQrVelado';
 import TeStatus from '../TeStatus';
+import { reiniciarAcceso } from '../reinicio';
 import { claseAncla } from '../signin-split';
+import { accionDelVelo, canalMuerto, hayReintento, pideEmpezarDeNuevo } from '../superficie';
 import useEstaVisible from '../use-esta-visible';
 import useTeAvailability from '../use-te-availability';
 import useTeChannel from '../use-te-channel';
@@ -55,9 +58,10 @@ const Marcador = () => (
  */
 const TeSignInAsideCanal = () => {
   const { t } = useTranslation();
-  const { fase, huboEscaneo, codigo, pairCode, correccionReloj, abrirQr } = useTeChannel({
-    canal: 'qr',
-  });
+  const { fase, huboEscaneo, codigo, pairCode, correccionReloj, abrirQr, reintentar } =
+    useTeChannel({
+      canal: 'qr',
+    });
 
   useEffect(() => {
     void abrirQr();
@@ -73,22 +77,41 @@ const TeSignInAsideCanal = () => {
    *   va a ocurrir sólo invita a esperar en vez de a terminar en el móvil— y el texto cambia.
    * - **aprobado / confirmando**: confirmación breve mientras se completa el acceso.
    * - **caducado / sin red / fallo**: sólo entonces, y siempre con el botón de reintento.
+   * - **sesión caducada**: el login entero se agotó. No es un canal muerto y no se arregla pidiendo
+   *   otro código: lo que aparece es «Empezar de nuevo». Ver `FaseCanal` en `use-te-channel`.
    *
    * Lo que NO existe es ningún camino que pinte un fallo antes de que el canal haya avisado de un
    * escaneo. Del texto se encarga `TeStatus` con `hasEscaneo`; de la forma, esto: la caja del
-   * código no desaparece nunca —se queda como marcador— y debajo aparece el reintento.
+   * código no desaparece nunca y, cuando el canal muere de verdad, **el último código se queda
+   * pintado bajo un velo** que es a la vez el botón de pedir otro (`TeQrVelado`).
    */
-  const terminado = fase === 'rechazado' || fase === 'caducado' || fase === 'fallo';
+  const muerto = canalMuerto(fase);
   const rotando = fase === 'abriendo' || fase === 'esperando';
-  const hayCodigo = Boolean(codigo) && !terminado;
+  const hayCodigo = Boolean(codigo) && !muerto;
+  /*
+   * El velo tapa un código, nunca un hueco. Si el canal murió sin haber llegado a pintar ninguno
+   * —la apertura que falla a la primera— no hay nada que velar y queda el marco apagado con la
+   * acción debajo: velar un rectángulo vacío sería prometer que hubo algo donde no lo hubo.
+   */
+  const velado = muerto ? codigo : undefined;
+  const velo = accionDelVelo(fase, reintentar);
 
   return (
     <>
-      <div className={classNames(styles.marco, !hayCodigo && styles.marcoApagado)}>
-        {hayCodigo && codigo ? (
-          <TeQrCanvas lado={ladoAside} uri={codigo.uri} />
-        ) : (
-          <div className={styles.marcoVacio}>{terminado ? undefined : <LoadingIcon />}</div>
+      <div className={classNames(styles.marco, !hayCodigo && !velado && styles.marcoApagado)}>
+        {hayCodigo && codigo && <TeQrCanvas lado={ladoAside} uri={codigo.uri} />}
+
+        {velado && (
+          <TeQrVelado
+            accion={velo.clave}
+            lado={ladoAside}
+            uri={velado.uri}
+            onReactivar={velo.ejecutar}
+          />
+        )}
+
+        {!hayCodigo && !velado && (
+          <div className={styles.marcoVacio}>{muerto ? undefined : <LoadingIcon />}</div>
         )}
       </div>
 
@@ -108,7 +131,7 @@ const TeSignInAsideCanal = () => {
         puerta principal del factor. Se enseña más pequeño que en la pantalla propia porque aquí
         compite por 284 px de ancho y no por la pantalla entera.
       */}
-      {!terminado && pairCode && (
+      {!muerto && pairCode && (
         <div className={styles.numero}>
           <div className={styles.numeroEtiqueta}>{t('te.qr.pair_code_label')}</div>
           <div className={styles.numeroValor}>{pairCode}</div>
@@ -122,18 +145,33 @@ const TeSignInAsideCanal = () => {
           persona está mirando el móvil y volviendo aquí a ver si pasó algo. Sólo se apaga en los
           terminales, donde ya no queda nada que esperar y lo que hay es un botón.
         */}
-        {!terminado && <i aria-hidden className={styles.pulso} />}
+        {!muerto && <i aria-hidden className={styles.pulso} />}
         <TeStatus canal="qr" fase={fase} hasEscaneo={huboEscaneo} />
       </div>
 
-      {terminado && (
+      {/*
+        El botón de abajo NO desaparece porque exista el velo: con el código velado son dos caminos
+        al mismo sitio, y con el canal muerto antes de pintar ningún código —donde no hay nada que
+        velar— es el único. Y ahora también sale con `sinRed`, que es donde antes la pantalla decía
+        «reintentando» sin ofrecer nada y sólo se salía recargando.
+      */}
+      {hayReintento(fase) && (
         <Button
           size="small"
           className={styles.reintento}
           title="te.action.retry"
           onClick={() => {
-            void abrirQr();
+            void reintentar();
           }}
+        />
+      )}
+
+      {pideEmpezarDeNuevo(fase) && (
+        <Button
+          size="small"
+          className={styles.reintento}
+          title="te.action.restart"
+          onClick={reiniciarAcceso}
         />
       )}
     </>

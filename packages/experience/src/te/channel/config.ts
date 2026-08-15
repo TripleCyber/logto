@@ -38,6 +38,17 @@ export const ritmoInicialMs = 1500;
 export const ritmoSinRedMs = 4000;
 
 /**
+ * Cuántas veces se vuelve a abrir el canal **sola** la pantalla tras un corte de red.
+ *
+ * Existe porque «Sin conexión. Reintentando…» tenía que ser verdad. Cuando el corte pillaba a la
+ * apertura —y no al sondeo— no se arrancaba ninguna cadena, así que no había nada reintentando: la
+ * pantalla se quedaba con esa frase para siempre y sólo se salía con F5. Ahora la apertura se
+ * reprograma sola, y el tope está para que una caída larga no convierta cada pestaña abierta en un
+ * generador de tráfico. Agotado el tope se para y queda el botón, que es el reintento de la persona.
+ */
+export const topeReaperturas = 4;
+
+/**
  * Techo absoluto de una sesión de canal, en milisegundos.
  *
  * Coincide con `TE_QR_SESSION_TTL_SECONDS` del servidor. El cliente **no** decide la caducidad

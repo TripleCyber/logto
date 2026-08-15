@@ -156,18 +156,29 @@ export const aplicar = (estado: EstadoCanal, marco: MarcoCanal): EstadoCanal => 
     return estado;
   }
 
+  /*
+   * Los terminales **conservan el último código**, y no es un descuido de limpieza.
+   *
+   * La pantalla lo necesita para poder velarlo en vez de dejar un marco vacío: un hueco no dice
+   * nada, y un código cubierto dice a la vez «esto estaba vivo» y «se puede revivir». Antes se
+   * tiraba aquí, así que al llegar a un terminal la pantalla se quedaba literalmente sin nada que
+   * pintar y el velo habría sido imposible.
+   *
+   * Conservarlo no lo revive: `esTerminal` sigue cortando la rotación y el sondeo, y quien dibuja
+   * sólo lo enseña bajo el velo. Es el último dato conocido, no una promesa de que sirva.
+   */
   switch (marco.t) {
     case 'approved': {
-      return { nombre: 'aprobado', seq: estado.seq };
+      return { nombre: 'aprobado', seq: estado.seq, codigo: estado.codigo };
     }
     case 'rejected': {
-      return { nombre: 'rechazado', seq: estado.seq };
+      return { nombre: 'rechazado', seq: estado.seq, codigo: estado.codigo };
     }
     case 'expired': {
-      return { nombre: 'caducado', seq: estado.seq };
+      return { nombre: 'caducado', seq: estado.seq, codigo: estado.codigo };
     }
     case 'failed': {
-      return { nombre: 'fallo', seq: estado.seq };
+      return { nombre: 'fallo', seq: estado.seq, codigo: estado.codigo };
     }
     case 'claimed': {
       // Regla 3: de `escaneado` sólo se sale hacia un terminal.

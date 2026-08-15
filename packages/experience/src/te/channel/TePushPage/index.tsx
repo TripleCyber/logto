@@ -10,6 +10,8 @@ import TeDevicePicker from '../TeDevicePicker';
 import TeOtherMethodLink from '../TeOtherMethodLink';
 import TeStatus from '../TeStatus';
 import styles from '../index.module.scss';
+import { reiniciarAcceso } from '../reinicio';
+import { canalMuerto, hayReintento, pideEmpezarDeNuevo } from '../superficie';
 import useTeAvailability from '../use-te-availability';
 import useTeChannel from '../use-te-channel';
 
@@ -73,12 +75,12 @@ const TePushPage = () => {
     return <ErrorPage title="error.invalid_session" />;
   }
 
-  const terminado = fase === 'rechazado' || fase === 'caducado' || fase === 'fallo';
+  const muerto = canalMuerto(fase);
 
   return (
     <SecondaryPageLayout description="te.push.description" title="te.push.title">
       <div className={styles.contenedor}>
-        {matchDigits && !terminado && (
+        {matchDigits && !muerto && (
           <div className={styles.numero}>
             <div className={styles.numeroEtiqueta}>{t('te.push.match_label')}</div>
             <div className={styles.numeroValor}>{matchDigits}</div>
@@ -100,13 +102,17 @@ const TePushPage = () => {
           </>
         ) : (
           <div className={styles.acciones}>
-            {terminado && (
+            {/* `sinRed` también trae botón, y `sesionCaducada` el suyo: ver `superficie.ts`. */}
+            {hayReintento(fase) && (
               <Button
                 title="te.action.retry"
                 onClick={() => {
                   void reintentarPush();
                 }}
               />
+            )}
+            {pideEmpezarDeNuevo(fase) && (
+              <Button title="te.action.restart" onClick={reiniciarAcceso} />
             )}
             {puedeVersionLista && (
               <Button

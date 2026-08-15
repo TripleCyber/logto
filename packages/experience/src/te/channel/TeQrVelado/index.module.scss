@@ -1,0 +1,78 @@
+@use '@/shared/scss/underscore' as _;
+
+/*
+ * El código velado.
+ *
+ * ## El velo es claro en los dos temas, y no es un descuido
+ *
+ * El marco del código es blanco siempre —también en oscuro, y el porqué está escrito en
+ * `channel/index.module.scss`: un QR invertido lo leen unos lectores y otros no—. El velo se pinta
+ * ENCIMA de ese blanco, así que si tomara sus valores de `--color-bg-*` quedaría un rectángulo
+ * oscuro sobre una lámina blanca en tema claro y al revés en oscuro. Se vela con blanco translúcido
+ * en los dos, y por el mismo motivo el texto lleva la tinta oscura literal (`#191c1d`, que es el
+ * valor de `--color-neutral-10` en claro) en vez de `--color-type-primary`, que en oscuro es casi
+ * blanco y desaparecería sobre el velo.
+ *
+ * Es la única excepción y es local a esta hoja: fuera del marco del código todo sigue saliendo de
+ * las variables de la experiencia.
+ *
+ * ## Difuminado con respaldo
+ *
+ * `backdrop-filter` es lo que mejor se lee: el código sigue reconociéndose como código y aun así no
+ * se puede escanear. Donde no exista, el blanco al 86 % ya deja el símbolo insinuado y el texto
+ * legible, así que la pantalla no depende de él.
+ */
+
+.velado {
+  position: relative;
+  display: block;
+  /* Reinicio del botón: aquí no queremos ni el marco ni el fondo del sistema, sólo su
+     comportamiento —foco, Enter, Espacio y el anuncio del lector—. */
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+  /* Sin esto, el velo redondeado dejaría asomar las esquinas cuadradas del lienzo. */
+  overflow: hidden;
+}
+
+.codigo {
+  display: block;
+}
+
+.capa {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: _.unit(2);
+  /* Hex con alfa y no `rgba()`: la casa exige `scale-color` para lo segundo, y aquí no hay ningún
+     color base del que escalar — el velo se define contra el blanco fijo del marco. */
+  background: #ffffffdb;
+  backdrop-filter: blur(3px);
+}
+
+.texto {
+  font: var(--font-label-2);
+  /* Ver la cabecera: tinta fija, porque el fondo de aquí es fijo. */
+  color: #191c1d;
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* Foco visible: obligatorio, porque el teclado es el único camino para quien no usa ratón y este
+   botón es la única salida de la pantalla. `:focus-visible` no dispara al tocar, así que el móvil
+   no se llena de contornos. */
+.velado:focus-visible {
+  outline: 2px solid var(--color-brand-default);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) {
+  .velado:hover .capa {
+    background: #ffffffc7;
+  }
+}

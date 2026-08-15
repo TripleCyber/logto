@@ -1,4 +1,5 @@
 import classNames from 'classnames';
+import { type TFuncKey } from 'i18next';
 import { type CSSProperties, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -9,8 +10,12 @@ import { LoadingIcon } from '@/shared/components/LoadingLayer';
 import TeCountdown from '../TeCountdown';
 import TeOtherMethodLink from '../TeOtherMethodLink';
 import TeQrCanvas from '../TeQrCanvas';
+import TeQrVelado from '../TeQrVelado';
 import TeStatus from '../TeStatus';
 import styles from '../index.module.scss';
+import { type CodigoCanal } from '../machine';
+import { reiniciarAcceso } from '../reinicio';
+import { accionDelVelo, canalMuerto, hayReintento, pideEmpezarDeNuevo } from '../superficie';
 import useTeChannel from '../use-te-channel';
 
 /**
@@ -53,19 +58,74 @@ const ladoMovil = 232;
 const conLado = (lado: number): CSSProperties =>
   Object.fromEntries([['--te-qr-lado', `${lado}px`]]);
 
+/**
+ * El marco del código: vivo, velado o vacío.
+ *
+ * Está aparte por una razón que no es de estilo: son las tres formas de la misma caja, y tenerlas
+ * juntas es lo que hace evidente que **el hueco mide siempre lo mismo** —el marco no da un salto al
+ * pasar de una a otra— y que el marco no desaparece nunca, que era lo que hacía la versión
+ * anterior al morir el canal.
+ */
+const Marco = ({
+  codigo,
+  lado,
+  velado,
+  velo,
+}: {
+  readonly codigo?: CodigoCanal;
+  readonly lado: number;
+  readonly velado?: CodigoCanal;
+  readonly velo: { readonly clave: TFuncKey; readonly ejecutar: () => void };
+}) => (
+  <div className={classNames(styles.marco, !codigo && styles.marcoApagado)}>
+    {velado && (
+      <TeQrVelado accion={velo.clave} lado={lado} uri={velado.uri} onReactivar={velo.ejecutar} />
+    )}
+
+    {!velado && codigo && <TeQrCanvas lado={lado} uri={codigo.uri} />}
+
+    {!codigo && (
+      <div className={styles.marcoVacio}>
+        <LoadingIcon />
+      </div>
+    )}
+  </div>
+);
+
 const TeQrPanel = ({ hasSalida = true }: Props) => {
   const { t } = useTranslation();
   const { isMobile } = usePlatform();
-  const { fase, huboEscaneo, codigo, pairCode, correccionReloj, abrirQr } = useTeChannel({
-    canal: 'qr',
-  });
+  const { fase, huboEscaneo, codigo, pairCode, correccionReloj, abrirQr, reintentar } =
+    useTeChannel({
+      canal: 'qr',
+    });
   const lado = isMobile ? ladoMovil : ladoEscritorio;
 
+  /*
+   * **Al montarse, código nuevo. Siempre, y venga de donde venga.**
+   *
+   * Entrar a una pantalla de factor por decisión propia es pedir un código, no heredar el que otra
+   * superficie dejó agotado. Y no hereda nada por construcción: `useTeChannel` es una instancia
+   * nueva por montaje, así que su fase arranca en `inactivo` y esta llamada la lleva a `abriendo`.
+   * Lo que sí se heredaba —y era el fallo que se veía como «se abre ya rota»— es que la interacción
+   * de Logto estuviera caducada: entonces esta apertura también fallaba, al instante, y la pantalla
+   * nacía pidiendo un reintento imposible. Ahora eso tiene nombre propio (`sesionCaducada`) y su
+   * propia salida.
+   *
+   * Lo contrario —abrir un canal por cada render— lo impide el propio `useEffect`: `abrirQr` es
+   * estable, así que corre una vez por montaje. Y dentro del hook, la generación garantiza que dos
+   * aperturas seguidas dejen viva una sola cadena de sondeo, que es la propiedad que el
+   * `IntersectionObserver` de la columna protege desde el otro lado —no montar el canal hasta que
+   * la columna se ve— y que aquí no aplica porque esta pantalla siempre se ve.
+   */
   useEffect(() => {
     void abrirQr();
   }, [abrirQr]);
 
-  const terminado = fase === 'rechazado' || fase === 'caducado' || fase === 'fallo';
+  const muerto = canalMuerto(fase);
+  /* El velo tapa un código, nunca un hueco: si no llegó a pintarse ninguno, no hay nada que velar. */
+  const velado = muerto ? codigo : undefined;
+  const velo = accionDelVelo(fase, reintentar);
 
   /*
    * La cuenta atrás desaparece en cuanto el canal dice que el código ya está reclamado. La
@@ -78,18 +138,17 @@ const TeQrPanel = ({ hasSalida = true }: Props) => {
 
   return (
     <div className={styles.contenedor} style={conLado(lado)}>
-      {!terminado && (
-        // El blanco es para el código: sin código —abriendo el canal, o ya reclamado— el marco se
-        // apaga y deja el contorno. Ver la hoja: una lámina blanca vacía parece algo roto.
-        <div className={classNames(styles.marco, !codigo && styles.marcoApagado)}>
-          {codigo ? (
-            <TeQrCanvas lado={lado} uri={codigo.uri} />
-          ) : (
-            <div className={styles.marcoVacio}>
-              <LoadingIcon />
-            </div>
-          )}
-        </div>
+      {/*
+        El marco NO desaparece al morir el canal, que es lo que hacía antes: quitarlo dejaba un
+        texto y un botón flotando donde había un código, y esa pantalla no se distingue de una que
+        se ha roto. Ahora el último código se queda pintado bajo un velo, y el velo entero es el
+        botón que pide otro (`TeQrVelado`).
+
+        El blanco es para el código: sin código —abriendo el canal, o ya reclamado— el marco se
+        apaga y deja el contorno. Ver la hoja: una lámina blanca vacía parece algo roto.
+      */}
+      {(!muerto || Boolean(velado)) && (
+        <Marco codigo={codigo} lado={lado} velado={velado} velo={velo} />
       )}
 
       {rotando && codigo && (
@@ -102,7 +161,7 @@ const TeQrPanel = ({ hasSalida = true }: Props) => {
         haga coincidir las dos pantallas. Lo que NO hace es detener el relay de espejo — quien
         monta el cebo obtiene el suyo y lo pinta. Necesario y no suficiente.
       */}
-      {!terminado && pairCode && (
+      {!muerto && pairCode && (
         <div className={styles.numero}>
           <div className={styles.numeroEtiqueta}>{t('te.qr.pair_code_label')}</div>
           <div className={styles.numeroValor}>{pairCode}</div>
@@ -112,21 +171,29 @@ const TeQrPanel = ({ hasSalida = true }: Props) => {
 
       <TeStatus canal="qr" fase={fase} hasEscaneo={huboEscaneo} />
 
-      {!terminado && <div className={styles.pista}>{t('te.qr.no_camera')}</div>}
+      {!muerto && <div className={styles.pista}>{t('te.qr.no_camera')}</div>}
 
-      {terminado && (
+      {/* `sinRed` también trae botón: ver `superficie.ts`. */}
+      {hayReintento(fase) && (
         <div className={styles.acciones}>
           <Button
             title="te.action.retry"
             onClick={() => {
-              void abrirQr();
+              void reintentar();
             }}
           />
           {hasSalida && <TeOtherMethodLink />}
         </div>
       )}
 
-      {!terminado && hasSalida && <TeOtherMethodLink />}
+      {pideEmpezarDeNuevo(fase) && (
+        <div className={styles.acciones}>
+          <Button title="te.action.restart" onClick={reiniciarAcceso} />
+          {hasSalida && <TeOtherMethodLink />}
+        </div>
+      )}
+
+      {!muerto && fase !== 'sinRed' && hasSalida && <TeOtherMethodLink />}
     </div>
   );
 };

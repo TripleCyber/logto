@@ -1,6 +1,5 @@
 import { InteractionEvent } from '@logto/schemas';
-import { HTTPError } from 'ky';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { identifyAndSubmitInteraction } from '@/apis/experience';
 import useApi from '@/hooks/use-api';
@@ -17,7 +16,8 @@ import {
   type RetoPush,
 } from './api';
 import { desfase, restanteMs } from './clock';
-import { ritmoInicialMs, ritmoSinRedMs, techoSesionMs } from './config';
+import { ritmoSinRedMs, techoSesionMs, topeReaperturas } from './config';
+import { clasificarFallo, type FaseCanal } from './fases';
 import {
   analizarMarco,
   aplicar,
@@ -30,7 +30,10 @@ import {
 import { comoTexto, numeroDeEmparejamiento } from './pairing';
 import useIsMounted from './use-is-mounted';
 import useRotacion from './use-rotacion';
+import useSondeo from './use-sondeo';
 import { crearLigadura, type LigaduraCanal } from './verifier';
+
+export type { FaseCanal } from './fases';
 
 /**
  * El motor de las pantallas del canal: abre, sondea, y redime.
@@ -51,19 +54,6 @@ import { crearLigadura, type LigaduraCanal } from './verifier';
  * El marco `approved` no mete a nadie en ningún sitio. Lo que decide es `POST …/confirm`: si
  * responde que no, el marco era mentira y la pantalla lo trata como un fallo.
  */
-
-/** Lo que la pantalla necesita saber para dibujarse. */
-export type FaseCanal =
-  | 'inactivo'
-  | 'abriendo'
-  | 'esperando'
-  | 'escaneado'
-  | 'confirmando'
-  | 'aprobado'
-  | 'rechazado'
-  | 'caducado'
-  | 'fallo'
-  | 'sinRed';
 
 type Opciones = {
   /** `qr` liga el canal con un verifier; `push` despacha a un dispositivo. */
@@ -118,7 +108,36 @@ const useTeChannel = ({ canal }: Opciones) => {
   const ligadura = useRef<LigaduraCanal>();
   const correccionReloj = useRef(0);
   const finDeSesion = useRef(0);
-  const sondeando = useRef<boolean>(false);
+
+  /**
+   * **La generación: el número de vidas que lleva este canal.**
+   *
+   * Cada apertura —la de montarse, la del botón, la de la reapertura automática— estrena una. La
+   * cadena de sondeo se queda con la suya y se muere sola en cuanto deja de ser la vigente, así
+   * que abrir de nuevo **cancela** lo anterior en vez de rezar para que ya hubiera terminado.
+   *
+   * Sustituye a un booleano `sondeando` que sólo sabía decir «hay una cadena viva» y no «¿de
+   * quién?». Con él, un reintento durante un corte de red no arrancaba cadena —la vieja seguía
+   * dormida esperando su turno— y la pantalla se quedaba mirando un canal que ya no existía. Con
+   * la generación, la vieja despierta, ve que no es la vigente y se aparta.
+   *
+   * `sondeoActivo` guarda la generación de la cadena viva, o 0 si no hay ninguna: es lo que
+   * impide que dos aperturas de la MISMA generación abran dos cadenas —la propiedad que ya tenía
+   * el booleano y que no se puede perder—.
+   */
+  const generacion = useRef(0);
+  const sondeoActivo = useRef(0);
+  /** El temporizador de la reapertura automática tras un corte de red. */
+  const reapertura = useRef<ReturnType<typeof setTimeout>>();
+  /** Cuántas reaperturas automáticas se llevan gastadas en este corte. Ver `topeReaperturas`. */
+  const reaperturasHechas = useRef(0);
+  /**
+   * Lo último que abrió canal, con sus argumentos ya dentro.
+   *
+   * Es lo que repite el botón de reintento y la reapertura automática, y por eso ninguna de las
+   * dos necesita saber si esta pantalla es de QR o de push, ni a qué dispositivo iba el push.
+   */
+  const ultimaApertura = useRef<() => Promise<void>>();
 
   /**
    * La máquina vive en una `ref` y se **refleja** en el estado de React, no al revés.
@@ -149,6 +168,40 @@ const useTeChannel = ({ canal }: Opciones) => {
   const handleError = useErrorHandler();
   const redirectTo = useGlobalRedirectTo();
   const asyncIdentifyAndSubmit = useApi(identifyAndSubmitInteraction, { silent: true });
+
+  /** ¿Sigue mandando esta generación? Si no, quien pregunte tiene que apartarse en silencio. */
+  const vigente = useCallback(
+    (gen: number) => estaMontado() && generacion.current === gen,
+    [estaMontado]
+  );
+
+  /**
+   * Estrena generación. Es lo primero que hace cualquier apertura, y con ello **cancela** la
+   * cadena de sondeo anterior y cualquier reapertura que estuviera programada.
+   */
+  const nuevaGeneracion = useCallback(() => {
+    clearTimeout(reapertura.current);
+    // eslint-disable-next-line @silverhand/fp/no-mutation
+    reapertura.current = undefined;
+    // eslint-disable-next-line @silverhand/fp/no-mutation
+    generacion.current += 1;
+
+    return generacion.current;
+  }, []);
+
+  /**
+   * Al desmontar, una generación más: lo que quede en vuelo se encuentra con que ya no manda y se
+   * aparta sin tocar estado de React. Y el temporizador de reapertura se apaga, que si no
+   * despertaría a abrir un canal para una pantalla que ya no está.
+   */
+  useEffect(
+    () => () => {
+      clearTimeout(reapertura.current);
+      // eslint-disable-next-line @silverhand/fp/no-mutation
+      generacion.current += 1;
+    },
+    []
+  );
 
   /**
    * Todo lo que Logto pueda querer todavía —MFA, perfil obligatorio, alta de passkey— vuelve como
@@ -281,127 +334,92 @@ const useTeChannel = ({ canal }: Opciones) => {
     return respuesta.retryAfterMs > 0 ? respuesta.retryAfterMs : undefined;
   }, [canal, fijarEstado, redimir]);
 
-  /** Arranca la cadena de sondeos. Idempotente: dos llamadas no abren dos cadenas. */
-  const arrancarSondeo = useCallback(() => {
-    if (sondeando.current) {
-      return;
-    }
+  /** Ver `use-sondeo.ts`: la cadena de vueltas, y por qué se cancela por generación. */
+  const arrancarSondeo = useSondeo({
+    unaVuelta,
+    rotar,
+    vigente,
+    sondeoActivo,
+    finDeSesion,
+    estadoRef,
+    setFase,
+  });
 
-    // eslint-disable-next-line @silverhand/fp/no-mutation
-    sondeando.current = true;
-
-    const vuelta = async () => {
-      if (!estaMontado()) {
+  /**
+   * Lo que se hace cuando la **apertura** tropieza, que es el agujero por el que se colaban F3 y F4.
+   *
+   * Antes esto era una línea —`setFase(error instanceof HTTPError ? 'fallo' : 'sinRed')`— y tenía
+   * dos consecuencias medidas:
+   *
+   *  - con el login caducado, el 404 se contaba como «el canal no sirve» y la pantalla repintaba
+   *    **la misma** que ya se estaba viendo: pulsar «Reintentar» parecía no hacer nada;
+   *  - con un corte de red, quedaba «Sin conexión. Reintentando…» sin que nadie reintentara nada,
+   *    porque el fallo había ocurrido **antes** de arrancar la cadena de sondeo. Ahí sólo se salía
+   *    recargando, que es exactamente F4.
+   *
+   * Ahora cada caso tiene su salida: el login caducado se nombra, el corte de red se reabre solo
+   * hasta un tope, y el canal muerto queda en `fallo` con el reintento en la mano.
+   */
+  const tropiezoAlAbrir = useCallback(
+    async (gen: number, error: unknown) => {
+      if (!vigente(gen)) {
         return;
       }
 
-      if (finDeSesion.current > 0 && Date.now() > finDeSesion.current) {
-        /*
-         * Techo absoluto: una pestaña olvidada no sondea para siempre si el servidor deja de
-         * contestar del todo. La caducidad de verdad la dice el marco `expired`, así que antes de
-         * rendirse se hace **una última vuelta**.
-         *
-         * No es cortesía: el techo se calcula desde el mismo `expiresAt` que usa el servidor, así
-         * que llegaba siempre un instante antes que el marco `expired` y lo tapaba. Consecuencia
-         * medida: tras un push que caduca, ni el servidor marcaba el reto como fallido ni la
-         * pantalla abría el selector de dispositivos, así que «usar otro dispositivo» no aparecía
-         * nunca y C3 se quedaba a medias. El desbloqueo del selector es un efecto del sondeo (PU-12,
-         * se gana habiendo gastado un push real), y saltárselo era saltarse el desbloqueo.
-         */
-        try {
-          await unaVuelta();
-        } catch {
-          setFase('caducado');
-        }
+      const clase = await clasificarFallo(error);
 
-        if (estaMontado() && !esTerminal(estadoRef.current)) {
-          setFase('caducado');
-        }
-
-        // eslint-disable-next-line @silverhand/fp/no-mutation
-        sondeando.current = false;
-
+      if (!vigente(gen)) {
         return;
       }
 
-      try {
-        const espera = await unaVuelta();
+      setFase(clase);
 
-        if (!estaMontado() || espera === undefined) {
-          // eslint-disable-next-line @silverhand/fp/no-mutation
-          sondeando.current = false;
-
-          return;
-        }
-
-        setTimeout(() => {
-          void vuelta();
-        }, espera);
-      } catch (error: unknown) {
-        if (!estaMontado()) {
-          // eslint-disable-next-line @silverhand/fp/no-mutation
-          sondeando.current = false;
-
-          return;
-        }
-
-        // Un 4xx del canal es el error uniforme: el canal ya no sirve y no hay nada que
-        // reintentar. Un fallo sin respuesta es la red, y de eso sí se vuelve.
-        if (error instanceof HTTPError) {
-          /*
-           * Antes de rendirse, una oportunidad: **el canal puede haberse quedado sin código sin
-           * haberse muerto**. Los temporizadores de una pestaña en segundo plano se frenan a uno
-           * por minuto, así que la rotación llega tarde, el código caduca del todo y el sondeo se
-           * encuentra con una sesión viva de la que no se puede derivar ningún marco. Al volver a
-           * la pestaña eso se veía como «este código no está listo» sin que nadie hubiera tocado
-           * nada.
-           *
-           * Acuñar otro código es exactamente lo que falta, y la sesión —que dura mucho más que
-           * un código— sigue siendo la misma. Si tampoco se puede acuñar, entonces sí: el canal
-           * está muerto y se dice.
-           */
-          const revivido = await rotar();
-
-          if (revivido && estaMontado()) {
-            setTimeout(() => {
-              void vuelta();
-            }, ritmoInicialMs);
-
-            return;
-          }
-
-          setFase('fallo');
-          // eslint-disable-next-line @silverhand/fp/no-mutation
-          sondeando.current = false;
-
-          return;
-        }
-
-        setFase('sinRed');
-        setTimeout(() => {
-          void vuelta();
-        }, ritmoSinRedMs);
+      if (clase !== 'sinRed' || reaperturasHechas.current >= topeReaperturas) {
+        return;
       }
-    };
 
-    void vuelta();
-  }, [estaMontado, rotar, unaVuelta]);
+      // eslint-disable-next-line @silverhand/fp/no-mutation
+      reaperturasHechas.current += 1;
+      // eslint-disable-next-line @silverhand/fp/no-mutation
+      reapertura.current = setTimeout(() => {
+        if (vigente(gen)) {
+          void ultimaApertura.current?.();
+        }
+      }, ritmoSinRedMs);
+    },
+    [vigente]
+  );
 
   /** Abre el canal QR: liga la pestaña, pinta el primer código y deriva el emparejamiento. */
   const abrirQr = useCallback(async () => {
+    // eslint-disable-next-line @silverhand/fp/no-mutation
+    ultimaApertura.current = abrirQr;
+
+    const gen = nuevaGeneracion();
+
     setFase('abriendo');
     fijarEstado(estadoInicial);
 
     try {
       const nueva = await crearLigadura();
+
+      if (!vigente(gen)) {
+        return;
+      }
+
       // eslint-disable-next-line @silverhand/fp/no-mutation
       ligadura.current = nueva;
 
       const apertura = await abrirCanalQr(nueva.channelHash);
 
-      if (!estaMontado()) {
+      if (!vigente(gen)) {
         return;
       }
+
+      // Se abrió: el corte de red, si lo hubo, se acabó, y el presupuesto de reaperturas vuelve
+      // entero para el siguiente.
+      // eslint-disable-next-line @silverhand/fp/no-mutation
+      reaperturasHechas.current = 0;
 
       if (apertura.code) {
         fijarEstado({ nombre: 'esperando', seq: apertura.code.seq, codigo: apertura.code });
@@ -416,18 +434,16 @@ const useTeChannel = ({ canal }: Opciones) => {
       if (apertura.sessionId) {
         const numero = await numeroDeEmparejamiento(apertura.sessionId, nueva.channelHashBytes);
 
-        if (estaMontado()) {
+        if (vigente(gen)) {
           setPairCode(comoTexto(numero));
         }
       }
 
-      arrancarSondeo();
+      arrancarSondeo(gen);
     } catch (error: unknown) {
-      if (estaMontado()) {
-        setFase(error instanceof HTTPError ? 'fallo' : 'sinRed');
-      }
+      await tropiezoAlAbrir(gen, error);
     }
-  }, [arrancarSondeo, estaMontado, fijarEstado]);
+  }, [arrancarSondeo, fijarEstado, nuevaGeneracion, tropiezoAlAbrir, vigente]);
 
   /**
    * El tramo común de push: despacha el reto, fija el techo de sesión y arranca el sondeo.
@@ -440,17 +456,26 @@ const useTeChannel = ({ canal }: Opciones) => {
    */
   const despacharYEsperar = useCallback(
     async (deviceRef?: string, antes?: () => Promise<void>) => {
+      const gen = nuevaGeneracion();
+
       setFase('abriendo');
       fijarEstado(estadoInicial);
 
       try {
         await antes?.();
 
-        const nuevoReto = await despacharPush(deviceRef);
-
-        if (!estaMontado()) {
+        if (!vigente(gen)) {
           return;
         }
+
+        const nuevoReto = await despacharPush(deviceRef);
+
+        if (!vigente(gen)) {
+          return;
+        }
+
+        // eslint-disable-next-line @silverhand/fp/no-mutation
+        reaperturasHechas.current = 0;
 
         setReto(nuevoReto);
         fijarEstado({ nombre: 'esperando', seq: 0 });
@@ -458,14 +483,12 @@ const useTeChannel = ({ canal }: Opciones) => {
         // eslint-disable-next-line @silverhand/fp/no-mutation
         finDeSesion.current = Date.now() + restanteMs(nuevoReto.expiresAt, Date.now());
 
-        arrancarSondeo();
+        arrancarSondeo(gen);
       } catch (error: unknown) {
-        if (estaMontado()) {
-          setFase(error instanceof HTTPError ? 'fallo' : 'sinRed');
-        }
+        await tropiezoAlAbrir(gen, error);
       }
     },
-    [arrancarSondeo, estaMontado, fijarEstado]
+    [arrancarSondeo, fijarEstado, nuevaGeneracion, tropiezoAlAbrir, vigente]
   );
 
   /**
@@ -475,6 +498,8 @@ const useTeChannel = ({ canal }: Opciones) => {
   const abrirPush = useCallback(
     async (loginHint: string, deviceRef?: string) => {
       setReto(undefined);
+      // eslint-disable-next-line @silverhand/fp/no-mutation
+      ultimaApertura.current = async () => abrirPush(loginHint, deviceRef);
 
       return despacharYEsperar(deviceRef, async () => {
         await abrirCanalPush(loginHint);
@@ -485,9 +510,25 @@ const useTeChannel = ({ canal }: Opciones) => {
 
   /** Vuelve a despachar sobre el canal ya abierto, a otro dispositivo o al mismo. */
   const reintentarPush = useCallback(
-    async (deviceRef?: string) => despacharYEsperar(deviceRef),
+    async (deviceRef?: string) => {
+      // eslint-disable-next-line @silverhand/fp/no-mutation
+      ultimaApertura.current = async () => reintentarPush(deviceRef);
+
+      return despacharYEsperar(deviceRef);
+    },
     [despacharYEsperar]
   );
+
+  /**
+   * Repite la última apertura, sea la que sea.
+   *
+   * Un solo botón para las dos pantallas y para los dos canales: quien dibuja no tiene que saber
+   * si esto era un QR o un push, ni a qué dispositivo iba. Antes cada superficie llamaba a
+   * `abrirQr` por su cuenta, y el push no tenía botón equivalente.
+   */
+  const reintentar = useCallback(async () => {
+    await ultimaApertura.current?.();
+  }, []);
 
   const { codigo } = estado;
 
@@ -505,6 +546,7 @@ const useTeChannel = ({ canal }: Opciones) => {
     abrirQr,
     abrirPush,
     reintentarPush,
+    reintentar,
   };
 };
 

@@ -72,10 +72,26 @@ const te = {
      * useful action.
      */
     unavailable: 'This code is not ready. Try again.',
+    /**
+     * LOGTO PATCH(te-canal-revive): the sign-in itself expired, not just the code.
+     *
+     * Logto's OIDC interaction lives one hour. Once it is gone, every experience API call answers
+     * `404 session.not_found` — including the one that reopens the channel — so "Try again" could
+     * never work and the screen kept repainting the state it was already in. This says the true
+     * thing and points at the only action that helps.
+     */
+    session_expired: 'This sign-in took too long. Start again to continue.',
   },
   action: {
     retry: 'Try again',
     other_method: 'Use another method',
+    /**
+     * LOGTO PATCH(te-canal-revive): written over the veiled code, and the accessible name of the
+     * button the whole code has become. Short, because it sits on top of the thing it acts on.
+     */
+    new_code: 'Get a new code',
+    /** LOGTO PATCH(te-canal-revive): reloads, which the server turns into a fresh sign-in. */
+    restart: 'Start again',
   },
 };
 

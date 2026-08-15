@@ -65,10 +65,27 @@ const te = {
      * disponible —el código no sirve— y termina con lo único que se puede hacer.
      */
     unavailable: 'Este código no está listo. Vuelve a intentarlo.',
+    /**
+     * LOGTO PATCH(te-canal-revive): lo que caducó es el acceso entero, no sólo el código.
+     *
+     * La interacción OIDC de Logto vive una hora. Pasada esa hora, TODAS las rutas de la
+     * experiencia responden `404 session.not_found` —también la que reabre el canal—, así que
+     * «Reintentar» no podía funcionar y la pantalla repintaba la misma en la que ya estaba. Esto
+     * dice lo que de verdad pasa y señala lo único que sirve.
+     */
+    session_expired: 'El acceso ha tardado demasiado. Empieza de nuevo para continuar.',
   },
   action: {
     retry: 'Reintentar',
     other_method: 'Usar otro método',
+    /**
+     * LOGTO PATCH(te-canal-revive): el texto escrito sobre el código velado, y el nombre accesible
+     * del botón en que se ha convertido el código entero. Corto, porque va encima de la cosa
+     * sobre la que actúa.
+     */
+    new_code: 'Pedir otro código',
+    /** LOGTO PATCH(te-canal-revive): recarga, y el servidor la convierte en un acceso nuevo. */
+    restart: 'Empezar de nuevo',
   },
 };
 

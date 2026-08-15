@@ -58,6 +58,12 @@ const claves: Readonly<Record<FaseCanal, TFuncKey | undefined>> = Object.freeze(
   caducado: 'te.status.expired',
   fallo: 'te.status.failed',
   sinRed: 'te.status.offline',
+  /**
+   * LOGTO PATCH(te-canal-revive): el login caducado tiene su propia frase porque tiene su propia
+   * salida. Contarlo como un canal muerto mandaba a pedir otro código, y pedir otro código exige
+   * una interacción que ya no existe: era mandar a pulsar un botón incapaz de funcionar.
+   */
+  sesionCaducada: 'te.status.session_expired',
 });
 
 /**
@@ -69,6 +75,8 @@ const claves: Readonly<Record<FaseCanal, TFuncKey | undefined>> = Object.freeze(
  */
 const esFallo = (fase: FaseCanal, hasEscaneo: boolean) =>
   fase === 'rechazado' || (fase === 'fallo' && hasEscaneo);
+// `sesionCaducada` tampoco: que el reloj del login se agote no es culpa de nadie y se arregla con
+// el enlace de al lado, igual que `caducado`.
 
 const TeStatus = ({ fase, canal, hasEscaneo }: Props) => {
   const { t } = useTranslation();
