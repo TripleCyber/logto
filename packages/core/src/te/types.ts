@@ -77,6 +77,26 @@ export const marcoCanalGuard = z.discriminatedUnion('t', [
 
 export type MarcoCanal = z.infer<typeof marcoCanalGuard>;
 
+/**
+ * Lo que te-api devuelve en el sondeo: el marco **envuelto**, junto al ritmo con el que hay que
+ * volver.
+ *
+ * El envoltorio existe y hay que respetarlo. Analizar la respuesta directamente con
+ * {@link marcoCanalGuard} —que es lo que este cliente hacía— falla siempre, porque el cuerpo no
+ * tiene `t` en la raíz: el sondeo del QR y el del push devolvían el error uniforme del canal en
+ * cada vuelta y ningún login llegaba a completarse. El fallo era invisible en los tests porque el
+ * cliente estaba simulado en el borde y el simulacro devolvía el marco desnudo.
+ *
+ * El `retryAfterMs` de te-api se consume aquí y no se propaga: la tabla de ritmos vive en
+ * {@link ritmoSondeoMs} y es la misma en los dos lados (1500/700/0). Tener un solo sitio donde se
+ * decide qué se le dice al navegador es lo que impide que las dos tablas se separen sin que nadie
+ * lo note.
+ */
+export const sondeoTeApiGuard = z.object({
+  frame: marcoCanalGuard,
+  retryAfterMs: z.number(),
+});
+
 /** Estados en los que ya no hay nada que esperar. El cliente para de sondear. */
 export const estadosTerminales = new Set<MarcoCanal['t']>([
   'approved',

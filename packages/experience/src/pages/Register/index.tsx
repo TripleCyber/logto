@@ -16,6 +16,7 @@ import TermsAndPrivacyLinks from '@/containers/TermsAndPrivacyLinks';
 import useNavigateWithPreservedSearchParams from '@/hooks/use-navigate-with-preserved-search-params';
 import { useSieMethods } from '@/hooks/use-sie';
 import useTerms from '@/hooks/use-terms';
+import useVisibleSocialConnectors from '@/te/channel/use-visible-social-connectors'; // LOGTO PATCH(te-register-no-wallet)
 
 import ErrorPage from '../ErrorPage';
 
@@ -28,6 +29,9 @@ const RegisterFooter = () => {
   const { termsValidation, agreeToTermsPolicy } = useTerms();
   const navigate = useNavigateWithPreservedSearchParams();
   const [params] = useSearchParams();
+
+  // LOGTO PATCH(te-register-no-wallet): ver el comentario del separador, más abajo.
+  const conectoresSocialesVisibles = useVisibleSocialConnectors(socialConnectors);
 
   const { showSingleSignOnForm } = useContext(SingleSignOnFormModeContext);
 
@@ -90,7 +94,14 @@ const RegisterFooter = () => {
       }
       {
         // Social sign-in methods
-        signUpMethods.length > 0 && socialConnectors.length > 0 && (
+        /*
+         * LOGTO PATCH(te-register-no-wallet): el separador se condiciona a lo que de verdad se
+         * pinta. En el alta la cartera nunca se ofrece (C4), así que con ella como único conector
+         * esto dejaba un «or» seguido de nada en la pantalla de crear cuenta.
+         *
+         * Upstream: `socialConnectors.length > 0`.
+         */
+        signUpMethods.length > 0 && conectoresSocialesVisibles.length > 0 && (
           <>
             <Divider label="description.or" className={styles.divider} />
             <SocialSignInList socialConnectors={socialConnectors} className={styles.main} />
@@ -104,6 +115,8 @@ const RegisterFooter = () => {
 const Register = () => {
   const { signUpMethods, socialConnectors, signInMode } = useSieMethods();
   const { agreeToTermsPolicy } = useTerms();
+  // LOGTO PATCH(te-register-no-wallet): lo que de verdad se pinta, no lo configurado.
+  const conectoresSocialesVisiblesPagina = useVisibleSocialConnectors(socialConnectors);
 
   if (!signInMode) {
     return <ErrorPage />;
@@ -121,7 +134,8 @@ const Register = () => {
           <IdentifierRegisterForm signUpMethods={signUpMethods} className={styles.main} />
         )}
         {/* Social sign-in methods only */}
-        {signUpMethods.length === 0 && socialConnectors.length > 0 && (
+        {/* LOGTO PATCH(te-register-no-wallet): idem, para el alta sólo-social. */}
+        {signUpMethods.length === 0 && conectoresSocialesVisiblesPagina.length > 0 && (
           <>
             {agreeToTermsPolicy !== AgreeToTermsPolicy.Automatic && (
               <TermsAndPrivacyCheckbox className={styles.terms} />

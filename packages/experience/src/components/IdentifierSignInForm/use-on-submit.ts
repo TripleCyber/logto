@@ -11,7 +11,7 @@ import useSendVerificationCode from '@/hooks/use-send-verification-code';
 import { useSieMethods } from '@/hooks/use-sie';
 import useStartIdentifierPasskeySignInProcessing from '@/hooks/use-start-identifier-passkey-sign-in-processing';
 import useToast from '@/hooks/use-toast';
-import useTeAvailability from '@/te/channel/use-te-availability'; // LOGTO PATCH(te-factor-choice)
+import useTeAvailability, { interruptoresResueltos } from '@/te/channel/use-te-availability'; // LOGTO PATCH(te-factor-choice)
 import { UserFlow } from '@/types';
 
 const useOnSubmit = (signInMethods: SignIn['methods']) => {
@@ -26,7 +26,12 @@ const useOnSubmit = (signInMethods: SignIn['methods']) => {
       hideErrorToast: true,
     });
   // LOGTO PATCH(te-factor-choice)
-  const { hayQr: hayQrTe, hayPush: hayPushTe } = useTeAvailability();
+  const {
+    hayQr: hayQrTe,
+    hayPush: hayPushTe,
+    hayConector: hayConectorTe,
+    resuelto: canalResuelto,
+  } = useTeAvailability();
 
   const navigateToPasswordPage = useCallback(() => {
     navigate({
@@ -80,9 +85,25 @@ const useOnSubmit = (signInMethods: SignIn['methods']) => {
        * igual que las de contraseña y código. El coste —que quien no tenga cartera pueda elegir
        * un método que acabará en el mensaje uniforme— está argumentado en `TeMethodCards`.
        *
+       * ## Y se espera a la respuesta si aún no ha llegado
+       *
+       * Sólo cuando el conector existe: si no está configurado no hay nada que esperar y el camino
+       * de upstream sigue intacto, sin una petición de más.
+       *
+       * Con el conector puesto sí se espera, porque decidir con la bandera a medio resolver mandaba
+       * a la pantalla de contraseña a quien enviase el formulario deprisa —un gestor de contraseñas
+       * que rellena y envía, por ejemplo—, así que el mismo identificador daba dos caminos distintos
+       * según lo rápido que fuera la red, y el camino corto se parecía mucho a «esta cuenta no tiene
+       * cartera». No cuesta una petición más: la de los interruptores arrancó al pintarse la
+       * pantalla y está memoizada.
+       *
        * Upstream: del bloque SSO se pasaba directamente al de passkey.
        */
-      if (hayQrTe || hayPushTe) {
+      const interruptores =
+        hayConectorTe && !canalResuelto ? await interruptoresResueltos() : undefined;
+      const canalesTe = interruptores?.channels ?? { qr: hayQrTe, push: hayPushTe };
+
+      if (canalesTe.qr || canalesTe.push) {
         navigate({ pathname: `/${UserFlow.SignIn}/verification-methods` });
 
         return;
@@ -138,6 +159,8 @@ const useOnSubmit = (signInMethods: SignIn['methods']) => {
       ssoConnectors.length,
       hayQrTe, // LOGTO PATCH(te-factor-choice)
       hayPushTe, // LOGTO PATCH(te-factor-choice)
+      hayConectorTe, // LOGTO PATCH(te-factor-choice)
+      canalResuelto, // LOGTO PATCH(te-factor-choice)
       navigate, // LOGTO PATCH(te-factor-choice)
       passkeySignIn?.enabled,
       checkSingleSignOn,

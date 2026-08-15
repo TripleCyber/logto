@@ -8,9 +8,9 @@ import {
   interruptoresApagados,
   interruptoresCanalGuard,
   listaDispositivosGuard,
-  marcoCanalGuard,
   retoPushGuard,
   sesionQrGuard,
+  sondeoTeApiGuard,
   transaccionGuard,
   type InterruptoresCanal,
   type MarcoCanal,
@@ -126,10 +126,19 @@ export class TeApiClient {
         metodo: 'POST',
         ruta: rutas.transacciones,
         cuerpo: {
-          authorize: Object.fromEntries(searchParams.entries()),
+          /**
+           * El identificador viaja **dentro de `authorize`, como `login_hint`**, y no como un campo
+           * hermano: te-api lo lee de los parámetros de autorización (`PARAMETROS_CONOCIDOS` en
+           * `src/oauth/transaccion.ts`) y guarda sólo su huella HMAC, nunca el valor en claro. Un
+           * campo hermano lo descartaría el esquema en silencio y el reto push nacería siempre
+           * señuelo — es decir, el push nunca llegaría a ningún teléfono y la pantalla se quedaría
+           * esperando sin que nada lo dijera.
+           */
+          authorize: {
+            ...Object.fromEntries(searchParams.entries()),
+            ...(loginHint === undefined ? {} : { login_hint: loginHint }),
+          },
           browser: navegador,
-          // Te-api sólo guarda la huella del identificador, nunca el valor en claro.
-          ...(loginHint === undefined ? {} : { loginHint }),
         },
       },
       transaccionGuard
@@ -155,10 +164,12 @@ export class TeApiClient {
   }
 
   async estadoSesionQr(sessionId: string, credenciales: CredencialesCanal): Promise<MarcoCanal> {
-    return this.#llamar(
+    const { frame } = await this.#llamar(
       { metodo: 'POST', ruta: `${rutas.sesionQr(sessionId)}/state`, cuerpo: credenciales },
-      marcoCanalGuard
+      sondeoTeApiGuard
     );
+
+    return frame;
   }
 
   /**
@@ -185,10 +196,12 @@ export class TeApiClient {
   }
 
   async estadoPush(challengeId: string, txnId: string): Promise<MarcoCanal> {
-    return this.#llamar(
+    const { frame } = await this.#llamar(
       { metodo: 'POST', ruta: `${rutas.retoPush(challengeId)}/state`, cuerpo: { txnId } },
-      marcoCanalGuard
+      sondeoTeApiGuard
     );
+
+    return frame;
   }
 
   /** Igual que {@link confirmarSesionQr}: el `code` se queda en este servidor. */
@@ -205,12 +218,22 @@ export class TeApiClient {
    * reciente son invariantes de su consulta, no filtros de este cliente. Un filtro en el cliente no
    * es un filtro: se olvida en la segunda llamada.
    */
-  async listarDispositivos(txnId: string, challengeId: string) {
+  async listarDispositivos(txnId: string, challengeId: string, eager = false) {
     return this.#llamar(
       {
         metodo: 'POST',
         ruta: rutas.dispositivosPush,
-        cuerpo: { txnId, challengeId },
+        cuerpo: {
+          txnId,
+          challengeId,
+          /**
+           * El opt-in del tenant tiene que **cruzar**. te-api también mantiene el selector cerrado
+           * hasta que un reto real ha fallado, así que sin este campo `TE_PUSH_DEVICE_PICKER=eager`
+           * abría la puerta de Logto y se estrellaba contra la de te-api: la bandera existía y no
+           * hacía nada. El coste de encenderla está escrito al lado de la bandera, en `config.ts`.
+           */
+          ...(eager ? { eager: true } : {}),
+        },
       },
       listaDispositivosGuard
     );

@@ -63,6 +63,28 @@ const apagado: ConfigCanal = Object.freeze({
   devicePicker: 'lazy',
 });
 
+/**
+ * Los interruptores **esperando** a que el servidor conteste, para quien no pueda decidir con lo
+ * que haya llegado hasta ahora.
+ *
+ * Existe por un fallo concreto y medido: la pantalla del identificador decide a dónde llevar a la
+ * persona en el instante en que se pulsa «Sign in». Si eso pasa antes de que la respuesta haya
+ * llegado —un gestor de contraseñas que rellena y envía, o sencillamente alguien rápido— la bandera
+ * todavía vale `false` y el camino se resuelve como si TripleEnable no existiera: se acaba en la
+ * pantalla de contraseña sin haber visto nunca los dos métodos. Un fallo que sólo aparece a veces,
+ * que es la peor clase, y que además se confunde con «esta cuenta no tiene cartera».
+ *
+ * No añade ninguna petición: `pedirConfig` está memoizada y arrancó al montarse la pantalla.
+ */
+export const interruptoresResueltos = async (): Promise<ConfigCanal> => {
+  try {
+    return await pedirConfig();
+  } catch {
+    // Fail-closed, igual que el hook: si no se pudo preguntar, no se ofrece el factor.
+    return apagado;
+  }
+};
+
 const useTeAvailability = (): Disponibilidad => {
   const { experienceSettings } = useContext(PageContext);
   const esAlta = useIsRegisterInteraction();

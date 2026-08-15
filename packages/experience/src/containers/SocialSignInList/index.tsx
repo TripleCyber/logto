@@ -5,10 +5,11 @@ import { useState } from 'react';
 import SocialLinkButton from '@/components/Button/SocialLinkButton';
 import useNativeMessageListener from '@/hooks/use-native-message-listener';
 import useNavigateWithPreservedSearchParams from '@/hooks/use-navigate-with-preserved-search-params'; // LOGTO PATCH(te-qr-desktop)
-import usePlatform from '@/hooks/use-platform'; // LOGTO PATCH(te-qr-desktop)
 import { getLogoUrl } from '@/shared/utils/logo';
-import { objetivoConectorTe, rutasTe } from '@/te/channel/config'; // LOGTO PATCH(te-qr-desktop)
-import useTeAvailability from '@/te/channel/use-te-availability'; // LOGTO PATCH(te-qr-desktop)
+import { rutasTe } from '@/te/channel/config'; // LOGTO PATCH(te-qr-desktop)
+import useVisibleSocialConnectors, {
+  esConectorTe,
+} from '@/te/channel/use-visible-social-connectors'; // LOGTO PATCH(te-qr-desktop)
 
 import styles from './index.module.scss';
 import useSocial from './use-social';
@@ -17,9 +18,6 @@ type Props = {
   readonly className?: string;
   readonly socialConnectors?: ExperienceSocialConnector[];
 };
-
-/** LOGTO PATCH(te-qr-desktop): ¿es éste el conector de TripleEnable? Por `target`, nunca por id. */
-const esTe = ({ target }: ExperienceSocialConnector) => target === objetivoConectorTe;
 
 const SocialSignInList = ({ className, socialConnectors = [] }: Props) => {
   const { invokeSocialSignIn, theme } = useSocial();
@@ -45,21 +43,21 @@ const SocialSignInList = ({ className, socialConnectors = [] }: Props) => {
    *    redirect social. Es el único camino al factor en móvil, porque ahí el código no se pinta
    *    en la pantalla principal: un QR en el móvil no se escanea con ese mismo móvil.
    *
+   * El filtro en sí vive en `useVisibleSocialConnectors`, porque las pantallas que pintan el
+   * separador «or» encima de esta lista necesitan la misma respuesta: condicionarlo al número sin
+   * filtrar dejaba un «or» colgado sobre una lista vacía.
+   *
    * Upstream: `socialConnectors.map(...)` sin filtro y con `invokeSocialSignIn` para todos.
    */
-  const { platform } = usePlatform();
-  const { hayQr } = useTeAvailability();
   const navigate = useNavigateWithPreservedSearchParams();
-  const conectoresVisibles = socialConnectors.filter(
-    (connector) => !esTe(connector) || (platform === 'mobile' && hayQr)
-  );
+  const conectoresVisibles = useVisibleSocialConnectors(socialConnectors);
   /* LOGTO PATCH end */
 
   const [loadingConnectorId, setLoadingConnectorId] = useState<string>();
 
   const handleClick = async (connector: ExperienceSocialConnector) => {
     /* LOGTO PATCH(te-qr-desktop): el factor vive dentro de la experiencia. No hay redirect. */
-    if (esTe(connector)) {
+    if (esConectorTe(connector)) {
       navigate({ pathname: rutasTe.qr });
 
       return;

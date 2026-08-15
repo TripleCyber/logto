@@ -1,5 +1,8 @@
+import { InteractionEvent } from '@logto/schemas';
+
 import api from '@/apis/api';
 import { experienceApiRoutes } from '@/apis/experience/const';
+import { initInteraction } from '@/apis/experience/interaction';
 
 import { type CodigoCanal, type MarcoCanal } from './machine';
 
@@ -71,9 +74,27 @@ export type Sondeo = {
 export const leerConfigCanal = async (): Promise<ConfigCanal> =>
   api.get(`${prefijo}/config`).json<ConfigCanal>();
 
+/**
+ * Arranca la interacción de acceso antes de abrir el canal.
+ *
+ * Sin esto no hay canal posible: las rutas del canal exigen una interacción de la experiencia viva
+ * —es la precondición que impide que una sesión exista fuera de un login en curso (DS-2)— y en la
+ * pantalla de acceso recién cargada todavía no hay ninguna. El servidor respondía
+ * `404 session.interaction_not_found` y la pantalla se quedaba en «no se pudo abrir» sin decir por
+ * qué. Es exactamente lo que hace `getSocialAuthorizationUrl` antes de pedir la URL del conector
+ * (`@/apis/experience/social.ts`), y por el mismo motivo.
+ *
+ * Siempre `SignIn`, nunca `Register`: en el alta no se ofrece TripleEnable (C4), y la ruta del
+ * canal rechaza además una interacción de alta por su cuenta.
+ */
+const arrancarAcceso = async () => initInteraction(InteractionEvent.SignIn);
+
 /** Abre el canal QR declarando la huella del verifier. */
-export const abrirCanalQr = async (channelHash: string): Promise<AperturaCanal> =>
-  api.post(prefijo, { json: { channel: 'qr', channelHash } }).json<AperturaCanal>();
+export const abrirCanalQr = async (channelHash: string): Promise<AperturaCanal> => {
+  await arrancarAcceso();
+
+  return api.post(prefijo, { json: { channel: 'qr', channelHash } }).json<AperturaCanal>();
+};
 
 /**
  * Abre el canal push.
@@ -82,8 +103,11 @@ export const abrirCanalQr = async (channelHash: string): Promise<AperturaCanal> 
  * (`login_hint_fp`) y Logto no lo registra en el log de auditoría. Abrir el canal no despacha
  * nada todavía; el despacho es `despacharPush`.
  */
-export const abrirCanalPush = async (loginHint: string): Promise<AperturaCanal> =>
-  api.post(prefijo, { json: { channel: 'push', loginHint } }).json<AperturaCanal>();
+export const abrirCanalPush = async (loginHint: string): Promise<AperturaCanal> => {
+  await arrancarAcceso();
+
+  return api.post(prefijo, { json: { channel: 'push', loginHint } }).json<AperturaCanal>();
+};
 
 /** Rota el código del QR. */
 export const rotarCodigo = async (verifier: string): Promise<CodigoCanal> =>

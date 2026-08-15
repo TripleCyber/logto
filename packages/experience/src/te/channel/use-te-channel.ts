@@ -90,6 +90,20 @@ const faseDesdeEstado = (estado: EstadoCanal): FaseCanal => {
 const useTeChannel = ({ canal }: Opciones) => {
   const [estado, setEstado] = useState<EstadoCanal>(estadoInicial);
   const [fase, setFase] = useState<FaseCanal>('inactivo');
+  /**
+   * ¿Ha dicho el canal en vivo, alguna vez, que alguien cogió el código?
+   *
+   * Existe para una regla de producto que no es de estilo: **no se pinta un fallo de acceso
+   * mientras nadie haya escaneado**. Esperar no es fallar, y quien mira un código que no ha
+   * tocado no puede leer «no se ha confirmado el acceso» sin concluir que algo está roto.
+   *
+   * La respuesta la da el canal y no un temporizador: `escaneado` es el marco `claimed`, y
+   * `aprobado` es el marco `approved` —que implica un escaneo aunque el `claimed` se perdiera en
+   * una vuelta suspendida—. Cualquier otra cosa (una vuelta del sondeo que se cae, el canal que
+   * no llega a abrirse, el techo de sesión) ocurre **sin** que nadie haya hecho nada, y ahí el
+   * único mensaje honesto es que el código no sirve y hay que pedir otro.
+   */
+  const [huboEscaneo, setHuboEscaneo] = useState(false);
   const [pairCode, setPairCode] = useState<string>();
   const [reto, setReto] = useState<RetoPush>();
   /** Se abre cuando un reto push termina mal: es la llave del selector de dispositivos (PU-12). */
@@ -119,6 +133,14 @@ const useTeChannel = ({ canal }: Opciones) => {
     // eslint-disable-next-line @silverhand/fp/no-mutation
     estadoRef.current = nuevo;
     setEstado(nuevo);
+
+    // Dentro de una sesión sólo sube; volver a `inicio` es un canal nuevo —lo hace `abrirQr` y
+    // `abrirPush` al reintentar— y entonces la sesión anterior deja de contar.
+    if (nuevo.nombre === 'escaneado' || nuevo.nombre === 'aprobado') {
+      setHuboEscaneo(true);
+    } else if (nuevo.nombre === 'inicio') {
+      setHuboEscaneo(false);
+    }
   }, []);
 
   const estaMontado = useIsMounted();
@@ -139,9 +161,12 @@ const useTeChannel = ({ canal }: Opciones) => {
   const redimir = useCallback(async () => {
     setFase('confirmando');
 
-    try {
-      await confirmarCanal(ligadura.current?.verifier);
-    } catch {
+    const confirmada = await confirmarCanal(ligadura.current?.verifier).catch(
+      // `confirm` dijo que no; el motivo real ya está en el log del servidor.
+      () => null
+    );
+
+    if (confirmada === null) {
       // `confirm` dijo que no. El marco `approved` no era una verdad.
       if (estaMontado()) {
         setFase('fallo');
@@ -150,7 +175,17 @@ const useTeChannel = ({ canal }: Opciones) => {
       return;
     }
 
-    const [error, resultado] = await asyncIdentifyAndSubmit();
+    /*
+     * La identificación va **con** el identificador de la verificación que acaba de devolver
+     * `confirm`. Llamarla sin él —que es lo que se hacía— deja el cuerpo vacío y la ruta responde
+     * `400 guard.invalid_input`: el canje del `code` había ido bien, la cartera había firmado, y
+     * aun así la pantalla acababa en «no se pudo confirmar el acceso». Es exactamente lo que hace
+     * el callback social de upstream (`signInWithSocial`), y por lo mismo: la interacción tiene
+     * que saber cuál de sus verificaciones acredita a esta persona.
+     */
+    const [error, resultado] = await asyncIdentifyAndSubmit({
+      verificationId: confirmada.verificationId,
+    });
 
     if (error) {
       await handleError(error, submitErrorHandler);
@@ -229,9 +264,28 @@ const useTeChannel = ({ canal }: Opciones) => {
       }
 
       if (finDeSesion.current > 0 && Date.now() > finDeSesion.current) {
-        // Techo absoluto: una pestaña olvidada no sondea para siempre si el servidor deja de
-        // contestar del todo. La caducidad de verdad la dice el marco `expired`.
-        setFase('caducado');
+        /*
+         * Techo absoluto: una pestaña olvidada no sondea para siempre si el servidor deja de
+         * contestar del todo. La caducidad de verdad la dice el marco `expired`, así que antes de
+         * rendirse se hace **una última vuelta**.
+         *
+         * No es cortesía: el techo se calcula desde el mismo `expiresAt` que usa el servidor, así
+         * que llegaba siempre un instante antes que el marco `expired` y lo tapaba. Consecuencia
+         * medida: tras un push que caduca, ni el servidor marcaba el reto como fallido ni la
+         * pantalla abría el selector de dispositivos, así que «usar otro dispositivo» no aparecía
+         * nunca y C3 se quedaba a medias. El desbloqueo del selector es un efecto del sondeo (PU-12,
+         * se gana habiendo gastado un push real), y saltárselo era saltarse el desbloqueo.
+         */
+        try {
+          await unaVuelta();
+        } catch {
+          setFase('caducado');
+        }
+
+        if (estaMontado() && !esTerminal(estadoRef.current)) {
+          setFase('caducado');
+        }
+
         // eslint-disable-next-line @silverhand/fp/no-mutation
         sondeando.current = false;
 
@@ -389,6 +443,8 @@ const useTeChannel = ({ canal }: Opciones) => {
   return {
     fase,
     estado,
+    /** Ver la declaración: decide si la pantalla puede hablar de un acceso fallido. */
+    huboEscaneo,
     codigo,
     pairCode,
     matchDigits: reto?.matchDigits,

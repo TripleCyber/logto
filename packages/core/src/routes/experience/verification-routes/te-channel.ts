@@ -431,7 +431,10 @@ export default function teChannelRoutes<T extends ExperienceInteractionRouterCon
 
       const { devices } = await clienteTe(config).listarDispositivos(
         estado.txnId,
-        exigirReto(estado)
+        exigirReto(estado),
+        // `eager` tiene que viajar hasta te-api: allí el selector también nace cerrado, y sin este
+        // dato la bandera abriría sólo esta puerta para chocar con la siguiente.
+        config.politicaSelectorDispositivos === 'eager'
       );
 
       ctx.body = {

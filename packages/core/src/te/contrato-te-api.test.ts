@@ -1,0 +1,144 @@
+import { TeApiClient } from './client.js';
+import { type ConfigTe } from './config.js';
+
+const { jest } = import.meta;
+
+/**
+ * El contrato de cable con te-api, pinchado con los cuerpos **literales** que el otro servicio
+ * emite y acepta.
+ *
+ * Por qué este fichero existe aparte de `client.test.ts`: allí el `fetch` simulado devuelve lo que
+ * al test le conviene, así que los tres fallos que se arreglan aquí pasaban desapercibidos — el
+ * cliente y su simulacro coincidían consigo mismos mientras el servicio de verdad hablaba otro
+ * idioma. Cada caso de este fichero cita la línea de te-api de la que sale la forma, para que si
+ * uno de los dos lados cambia, el que se rompa sea este test y no un login en producción.
+ *
+ * Referencias (rutas relativas a `tripleenable-api/`):
+ *  · `src/routes/s2s.ts:158-172`  — `respuestaMarco`: el marco viaja ENVUELTO en `{frame,
+ *    retryAfterMs}`.
+ *  · `src/oauth/transaccion.ts:64-74,155` — `login_hint` se lee de los parámetros de autorización.
+ *  · `src/routes/s2s.ts:202`      — `cuerpoDispositivos` acepta `eager`, y sin él el selector sigue
+ *    cerrado del lado de te-api.
+ */
+
+const config: ConfigTe = {
+  baseUrl: 'http://127.0.0.1:3010',
+  claves: [{ kid: '2026-08', secreto: Buffer.alloc(32, 7) }],
+  kidActivo: '2026-08',
+  timeoutMs: 50,
+  maxEnVuelo: 4,
+  fallosParaAbrir: 99,
+  reposoCortacircuitosMs: 10_000,
+  pisoLatenciaErrorMs: 0,
+  ttlInterruptoresMs: 10_000,
+  politicaSelectorDispositivos: 'lazy',
+};
+
+const respuestaJson = (cuerpo: unknown, status = 200) =>
+  new Response(JSON.stringify(cuerpo), { status, headers: { 'content-type': 'application/json' } });
+
+const fetchSimulado = jest.fn<
+  Promise<Response>,
+  [string | URL | Request, RequestInit | undefined]
+>();
+
+const credenciales = { channelSecret: 'secreto-del-canal', verifier: 'verificador' };
+
+/** Un código tal y como lo serializa `serializarCodigo` en `src/routes/s2s.ts:595`. */
+const codigo = {
+  codeId: '8f5a2f2e-9a4d-4a3f-8f0a-2c9a1b3c4d5e',
+  uri: 'tripleenable://qr?c=8f5a2f2e',
+  seq: 1,
+  displayExpiresAt: '2026-08-15T10:00:30.000Z',
+  hardExpiresAt: '2026-08-15T10:00:45.000Z',
+};
+
+const cuerpoEnviado = (llamada: number): Record<string, unknown> =>
+  JSON.parse(String(fetchSimulado.mock.calls[llamada]?.[1]?.body ?? '{}')) as Record<
+    string,
+    unknown
+  >;
+
+beforeEach(() => {
+  fetchSimulado.mockReset();
+  // eslint-disable-next-line @silverhand/fp/no-mutation
+  globalThis.fetch = fetchSimulado as unknown as typeof globalThis.fetch;
+});
+
+describe('el sondeo llega envuelto', () => {
+  it('acepta el cuerpo real de te-api y devuelve el marco de dentro', async () => {
+    fetchSimulado.mockResolvedValue(
+      respuestaJson({ frame: { t: 'code', code: codigo }, retryAfterMs: 1500 })
+    );
+
+    const marco = await new TeApiClient(config).estadoSesionQr('sesion-1', credenciales);
+
+    expect(marco).toEqual({ t: 'code', code: codigo });
+  });
+
+  it('lo mismo para el push, que comparte la envoltura', async () => {
+    fetchSimulado.mockResolvedValue(respuestaJson({ frame: { t: 'approved' }, retryAfterMs: 0 }));
+
+    const marco = await new TeApiClient(config).estadoPush('reto-1', 'txn-1');
+
+    expect(marco).toEqual({ t: 'approved' });
+  });
+
+  /**
+   * La otra mitad del arreglo: aceptar además el marco desnudo dejaría pasar dos contratos a la
+   * vez, y el día que te-api dejara de envolver nadie se enteraría. Se rechaza, que es fail-closed.
+   */
+  it('rechaza un marco sin envolver en vez de admitir dos contratos', async () => {
+    fetchSimulado.mockResolvedValue(respuestaJson({ t: 'approved' }));
+
+    await expect(new TeApiClient(config).estadoPush('reto-1', 'txn-1')).rejects.toThrow(
+      /fuera de contrato/
+    );
+  });
+});
+
+describe('el identificador viaja donde te-api lo lee', () => {
+  const url = 'https://te.example/oauth/authorize?client_id=logto-te&state=abc&code_challenge=xyz';
+
+  it('lo mete en `authorize.login_hint`, nunca como campo hermano', async () => {
+    fetchSimulado.mockResolvedValue(respuestaJson({ txnId: 'txn-1', expiresAt: 'ya' }));
+
+    await new TeApiClient(config).crearTransaccion(url, { ip: '203.0.113.7' }, 'vlad@example.test');
+
+    const cuerpo = cuerpoEnviado(0);
+    const autorizacion = cuerpo.authorize as Record<string, string>;
+
+    expect(autorizacion.login_hint).toBe('vlad@example.test');
+    expect(autorizacion.client_id).toBe('logto-te');
+    // Un campo hermano lo descarta el esquema de te-api en silencio, y el reto push nace señuelo.
+    expect(Object.keys(cuerpo).slice().sort()).toEqual(['authorize', 'browser']);
+  });
+
+  it('sin identificador no inventa la clave', async () => {
+    fetchSimulado.mockResolvedValue(respuestaJson({ txnId: 'txn-1', expiresAt: 'ya' }));
+
+    await new TeApiClient(config).crearTransaccion(url, { ip: '203.0.113.7' });
+
+    expect(Object.keys(cuerpoEnviado(0).authorize as Record<string, unknown>)).not.toContain(
+      'login_hint'
+    );
+  });
+});
+
+describe('el opt-in del selector cruza hasta te-api', () => {
+  it('manda `eager` cuando el tenant lo ha encendido', async () => {
+    fetchSimulado.mockResolvedValue(respuestaJson({ devices: [] }));
+
+    await new TeApiClient(config).listarDispositivos('txn-1', 'reto-1', true);
+
+    expect(cuerpoEnviado(0)).toEqual({ txnId: 'txn-1', challengeId: 'reto-1', eager: true });
+  });
+
+  it('y no lo manda por defecto: el selector se gana, no se pide', async () => {
+    fetchSimulado.mockResolvedValue(respuestaJson({ devices: [] }));
+
+    await new TeApiClient(config).listarDispositivos('txn-1', 'reto-1');
+
+    expect(cuerpoEnviado(0)).toEqual({ txnId: 'txn-1', challengeId: 'reto-1' });
+  });
+});

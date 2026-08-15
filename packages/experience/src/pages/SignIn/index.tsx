@@ -18,6 +18,7 @@ import useNavigateWithPreservedSearchParams from '@/hooks/use-navigate-with-pres
 import { useSieMethods } from '@/hooks/use-sie';
 import useTerms from '@/hooks/use-terms';
 import TeQrInline from '@/te/channel/TeQrInline'; // LOGTO PATCH(te-qr-desktop)
+import useVisibleSocialConnectors from '@/te/channel/use-visible-social-connectors'; // LOGTO PATCH(te-qr-desktop)
 
 import ErrorPage from '../ErrorPage';
 
@@ -39,6 +40,9 @@ const SignInFooters = () => {
   } = useSieMethods();
 
   const { showSingleSignOnForm } = useContext(SingleSignOnFormModeContext);
+
+  // LOGTO PATCH(te-qr-desktop): ver el comentario del separador, más abajo.
+  const conectoresSocialesVisibles = useVisibleSocialConnectors(socialConnectors);
 
   const handleSsoNavigation = useCallback(async () => {
     /**
@@ -89,8 +93,15 @@ const SignInFooters = () => {
         )
       }
       {
+        /*
+         * LOGTO PATCH(te-qr-desktop): el separador se condiciona a los conectores que de verdad se
+         * pintan, no a los configurados. En escritorio la cartera se retira de la lista (el código
+         * ya está arriba) y con ella como único conector esto dejaba un «or» sobre nada.
+         *
+         * Upstream: `socialConnectors.length > 0`.
+         */
         // Social sign-in methods
-        signInMethods.length > 0 && socialConnectors.length > 0 && (
+        signInMethods.length > 0 && conectoresSocialesVisibles.length > 0 && (
           <>
             <Divider label="description.or" className={styles.divider} />
             <SocialSignInList socialConnectors={socialConnectors} className={styles.main} />
