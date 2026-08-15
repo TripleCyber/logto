@@ -18,8 +18,9 @@ import { mockSignInExperienceSettings } from '@/__mocks__/logto';
 import SocialSignInList from '@/containers/SocialSignInList';
 import SignInVerificationMethods from '@/pages/SignInVerificationMethods';
 
-import TeQrInline from './TeQrInline';
+import TeSignInAside from './TeSignInAside';
 import { objetivoConectorTe } from './config';
+import { claseAncla } from './signin-split';
 import { olvidarConfigCanal } from './use-te-availability';
 
 /* eslint-disable @silverhand/fp/no-mutating-methods */
@@ -140,9 +141,9 @@ beforeEach(() => {
   sondear.mockResolvedValue({ frame: { t: 'code' }, retryAfterMs: 0, cabeceraDate: undefined });
 });
 
-describe('C1 · el QR sólo se pinta solo en escritorio', () => {
-  it('en escritorio el código aparece directamente en la pantalla de acceso', async () => {
-    const { container } = render(<TeQrInline />, { platform: 'web' });
+describe('C1 · el código vive en la columna de la tarjeta de acceso', () => {
+  it('la columna se monta con el código dentro y abre un solo canal', async () => {
+    const { container } = render(<TeSignInAside />, { platform: 'web' });
 
     await waitFor(() => {
       expect(container.querySelector('canvas')).not.toBeNull();
@@ -150,14 +151,19 @@ describe('C1 · el QR sólo se pinta solo en escritorio', () => {
     expect(abrirCanalQr).toHaveBeenCalledTimes(1);
   });
 
-  it('en móvil NO se pinta ahí: un QR en el móvil no se escanea con ese móvil', async () => {
-    const { container } = render(<TeQrInline />, { platform: 'mobile' });
+  /*
+   * Quién ve la columna lo decide `@media (min-width: 820px)`, y una media query no se puede
+   * comprobar en jsdom —no maqueta—. Lo que sí es del componente, y lo que se comprueba aquí, es
+   * que la columna lleva el ancla que la hoja global usa para ensanchar la tarjeta. Si alguien
+   * renombra la clase en un sitio y no en el otro, la tarjeta se queda estrecha con la columna
+   * dentro; esto lo caza.
+   */
+  it('lleva el ancla que engancha el ancho de la tarjeta a su presencia', async () => {
+    const { container } = render(<TeSignInAside />, { platform: 'web' });
 
     await waitFor(() => {
-      expect(leerConfigCanal).toHaveBeenCalled();
+      expect(container.querySelector(`aside.${claseAncla}`)).not.toBeNull();
     });
-    expect(container.querySelector('canvas')).toBeNull();
-    expect(abrirCanalQr).not.toHaveBeenCalled();
   });
 
   it('en móvil se llega por el botón del conector, que lleva a su propia pantalla', async () => {
@@ -171,25 +177,27 @@ describe('C1 · el QR sólo se pinta solo en escritorio', () => {
     await expect(findByAltText(objetivoConectorTe)).resolves.not.toBeNull();
   });
 
-  it('en escritorio el botón del conector desaparece: el código ya está pintado arriba', async () => {
-    const { queryByAltText } = render(
+  /*
+   * La regla cambió: antes la fila desaparecía en escritorio porque el código estaba arriba. Con
+   * la columna condicionada al ANCHO DE LA VENTANA y no a la plataforma, esa regla dejaba sin
+   * factor a quien tuviera la ventana estrecha. La fila se queda siempre.
+   */
+  it('en escritorio el botón del conector SIGUE estando: la ventana puede ser estrecha', async () => {
+    const { findByAltText } = render(
       <SocialSignInList socialConnectors={[conectorTe] as never} />,
       {
         platform: 'web',
       }
     );
 
-    await waitFor(() => {
-      expect(leerConfigCanal).toHaveBeenCalled();
-    });
-    expect(queryByAltText(objetivoConectorTe)).toBeNull();
+    await expect(findByAltText(objetivoConectorTe)).resolves.not.toBeNull();
   });
 
   describe('reactividad a consola', () => {
-    it('sin el conector en la configuración no hay QR ni botón, y NO se pregunta al servidor', async () => {
+    it('sin el conector en la configuración no hay columna ni botón, y NO se pregunta al servidor', async () => {
       const { container, queryByAltText } = render(
         <>
-          <TeQrInline />
+          <TeSignInAside />
           <SocialSignInList socialConnectors={[] as never} />
         </>,
         { platform: 'web', connectors: [] }
@@ -198,6 +206,8 @@ describe('C1 · el QR sólo se pinta solo en escritorio', () => {
       await waitFor(() => {
         expect(container.querySelector('canvas')).toBeNull();
       });
+      // Ni siquiera el hueco: sin columna la tarjeta vuelve a su ancho de siempre.
+      expect(container.querySelector(`.${claseAncla}`)).toBeNull();
       expect(queryByAltText(objetivoConectorTe)).toBeNull();
       expect(leerConfigCanal).not.toHaveBeenCalled();
     });
@@ -208,21 +218,22 @@ describe('C1 · el QR sólo se pinta solo en escritorio', () => {
         devicePicker: 'lazy',
       });
 
-      const { container } = render(<TeQrInline />, { platform: 'web' });
+      const { container } = render(<TeSignInAside />, { platform: 'web' });
 
       await waitFor(() => {
-        expect(leerConfigCanal).toHaveBeenCalled();
+        expect(container.querySelector(`.${claseAncla}`)).toBeNull();
       });
       expect(container.querySelector('canvas')).toBeNull();
+      expect(abrirCanalQr).not.toHaveBeenCalled();
     });
 
     it('si el servidor no contesta, el factor no se ofrece en vez de ofrecerse y fallar', async () => {
       leerConfigCanal.mockRejectedValue(new Error('te-api caído'));
 
-      const { container } = render(<TeQrInline />, { platform: 'web' });
+      const { container } = render(<TeSignInAside />, { platform: 'web' });
 
       await waitFor(() => {
-        expect(leerConfigCanal).toHaveBeenCalled();
+        expect(container.querySelector(`.${claseAncla}`)).toBeNull();
       });
       expect(container.querySelector('canvas')).toBeNull();
     });
@@ -272,7 +283,7 @@ describe('C2 · tras el identificador se ofrecen los dos métodos', () => {
   });
 
   it('no consulta al directorio: nunca se pide nada con el identificador dentro', async () => {
-    render(<TeQrInline />, { platform: 'web' });
+    render(<TeSignInAside />, { platform: 'web' });
 
     await waitFor(() => {
       expect(leerConfigCanal).toHaveBeenCalled();
@@ -324,9 +335,9 @@ describe('C4 · en crear cuenta no se puede continuar con TripleEnable', () => {
   });
 });
 
-describe('el QR de escritorio, por dentro', () => {
+describe('la columna del código, por dentro', () => {
   it('pinta el número de emparejamiento, que se deriva aquí y no lo dice el servidor', async () => {
-    const { findByText } = render(<TeQrInline />, { platform: 'web' });
+    const { findByText } = render(<TeSignInAside />, { platform: 'web' });
 
     await expect(findByText('te.qr.pair_code_label')).resolves.not.toBeNull();
     // Cuatro cifras con ceros a la izquierda: la comparación que se le pide a una persona es de
@@ -341,14 +352,13 @@ describe('el QR de escritorio, por dentro', () => {
     });
   });
 
-  it('ofrece la vía sin cámara, que es la alternativa cuando no se puede escanear', async () => {
-    const { findByText } = render(<TeQrInline />, { platform: 'web' });
-
-    await expect(findByText('te.qr.no_camera')).resolves.not.toBeNull();
-  });
-
+  /*
+   * La vía sin cámara (`te.qr.no_camera`) vive en la pantalla propia del código y no aquí: en el
+   * acceso, la alternativa a escanear es el formulario que está a diez centímetros a la derecha, y
+   * repetirla en la columna sería decir dos veces lo mismo en la misma pantalla.
+   */
   it('el lienzo tiene nombre accesible: un `<canvas>` mudo no anuncia nada', async () => {
-    const { container } = render(<TeQrInline />, { platform: 'web' });
+    const { container } = render(<TeSignInAside />, { platform: 'web' });
 
     await waitFor(() => {
       expect(container.querySelector('canvas')).not.toBeNull();

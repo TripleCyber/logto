@@ -23,6 +23,13 @@ const te = {
     pair_code_hint:
       'Your wallet will show the same four digits. If they differ, stop and start again.',
     refresh_in: 'The code refreshes in {{seconds}}s',
+    /**
+     * LOGTO PATCH(te-signin-split): heading and note for the QR column of the sign-in card.
+     * It is the first thing on the screen, so it names the thing and says what it costs —
+     * nothing to type — instead of explaining the protocol.
+     */
+    aside_title: 'TripleEnable wallet',
+    aside_note: 'Scan the code. No password, nothing to type.',
   },
   push: {
     title: 'Approve on your phone',
@@ -55,6 +62,16 @@ const te = {
     expired: 'This took too long. Start again when you are ready.',
     failed: 'Sign-in was not confirmed. Try another method.',
     offline: 'No connection. Trying again…',
+    /**
+     * LOGTO PATCH(te-signin-split): what a dead channel says when **nobody has scanned yet**.
+     *
+     * `failed` above says the sign-in was not confirmed, which is a statement about an attempt
+     * that happened. Before the live channel reports a scan there is no attempt, so saying that
+     * is both wrong and alarming: the person is looking at a code they have not touched. This
+     * one states the only fact available — the code is not usable — and ends with the only
+     * useful action.
+     */
+    unavailable: 'This code is not ready. Try again.',
   },
   action: {
     retry: 'Try again',

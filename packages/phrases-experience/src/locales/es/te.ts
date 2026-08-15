@@ -17,6 +17,13 @@ const te = {
     pair_code_hint:
       'Tu cartera enseñará las mismas cuatro cifras. Si no coinciden, para y vuelve a empezar.',
     refresh_in: 'El código se renueva en {{seconds}} s',
+    /**
+     * LOGTO PATCH(te-signin-split): título y nota de la columna del código en la tarjeta de
+     * acceso. Es lo primero que se lee, así que nombra la cosa y dice lo que cuesta —nada que
+     * teclear— en vez de explicar el protocolo.
+     */
+    aside_title: 'Cartera TripleEnable',
+    aside_note: 'Escanea el código. Sin contraseña, nada que teclear.',
   },
   push: {
     title: 'Apruébalo en tu móvil',
@@ -49,6 +56,15 @@ const te = {
     expired: 'Ha pasado demasiado tiempo. Empieza de nuevo cuando quieras.',
     failed: 'No se ha confirmado el acceso. Prueba otro método.',
     offline: 'Sin conexión. Reintentando…',
+    /**
+     * LOGTO PATCH(te-signin-split): lo que dice un canal muerto cuando **nadie ha escaneado**.
+     *
+     * `failed` afirma que el acceso no se confirmó, y eso habla de un intento que ocurrió. Antes
+     * de que el canal en vivo avise de un escaneo no hay intento, así que decirlo es falso y
+     * además alarma: quien lee está mirando un código que no ha tocado. Éste dice el único hecho
+     * disponible —el código no sirve— y termina con lo único que se puede hacer.
+     */
+    unavailable: 'Este código no está listo. Vuelve a intentarlo.',
   },
   action: {
     retry: 'Reintentar',

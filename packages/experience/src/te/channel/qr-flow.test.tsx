@@ -183,7 +183,13 @@ describe('los estados que la persona tiene que entender', () => {
   it.each([
     ['rejected', 'te.status.rejected'],
     ['expired', 'te.status.expired'],
-    ['failed', 'te.status.failed'],
+    /*
+     * `failed` **sin escaneo previo** ya no dice «no se ha confirmado el acceso»: eso habla de un
+     * intento que ocurrió, y aquí nadie ha tocado el código. Dice que el código no sirve, que es
+     * lo único cierto, y sigue terminando con algo que hacer. El caso con escaneo previo —donde sí
+     * hubo intento y sí se dice— está en `signin-split.test.tsx`.
+     */
+    ['failed', 'te.status.unavailable'],
   ])('el marco `%s` se cuenta como «%s», sin jerga y con algo que hacer', async (marco, clave) => {
     sondear.mockResolvedValue({ frame: { t: marco }, retryAfterMs: 0, cabeceraDate: undefined });
 
@@ -221,7 +227,7 @@ describe('los estados que la persona tiene que entender', () => {
 
     const { findByText, container } = render();
 
-    await findByText('te.status.failed');
+    await findByText('te.status.unavailable');
 
     const texto = container.textContent ?? '';
 

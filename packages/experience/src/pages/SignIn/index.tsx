@@ -17,7 +17,7 @@ import TermsAndPrivacyLinks from '@/containers/TermsAndPrivacyLinks';
 import useNavigateWithPreservedSearchParams from '@/hooks/use-navigate-with-preserved-search-params';
 import { useSieMethods } from '@/hooks/use-sie';
 import useTerms from '@/hooks/use-terms';
-import TeQrInline from '@/te/channel/TeQrInline'; // LOGTO PATCH(te-qr-desktop)
+import TeSignInAside from '@/te/channel/TeSignInAside'; // LOGTO PATCH(te-signin-split)
 import useVisibleSocialConnectors from '@/te/channel/use-visible-social-connectors'; // LOGTO PATCH(te-qr-desktop)
 
 import ErrorPage from '../ErrorPage';
@@ -138,19 +138,26 @@ const SignIn = () => {
   return (
     <LandingPageLayout title="description.sign_in_to_your_account">
       <GoogleOneTap context="signin" />
+      {/*
+        LOGTO PATCH(te-signin-split): C1 · la columna del código de TripleEnable.
+
+        Va ANTES del formulario a propósito, y no donde se pinta. En pantalla está a la izquierda
+        —la saca del flujo `position: absolute`, ver su hoja—, y este orden es el que hace que el
+        recorrido con teclado y con lector de pantalla siga el mismo camino que la vista: primero
+        la vía que no pide teclear nada, después el formulario.
+
+        Antes esto era `<TeQrInline/>` entre `<Main/>` y `<SignInFooters/>`, es decir, el código
+        apilado debajo del formulario y estrecho. La columna es la maqueta aprobada.
+
+        El componente decide solo si existe: sin conector encendido en la consola o con te-api
+        caída no pinta nada, y entonces la tarjeta vuelve a su ancho de siempre.
+
+        Upstream: `<Main/>` y `<SignInFooters/>` sin nada en medio.
+      */}
+      <TeSignInAside />
       <WebAuthnContextProvider>
         <SingleSignOnFormModeContextProvider>
           <Main signInMethods={signInMethods} socialConnectors={socialConnectors} />
-          {/*
-            LOGTO PATCH(te-qr-desktop): C1 · el QR de TripleEnable, pintado directamente en esta
-            pantalla y **sólo en escritorio**. El propio componente decide: si la plataforma es
-            móvil, o el conector está apagado en la consola, o te-api no responde, no pinta nada.
-            Va entre el formulario y el pie para que se lea como una alternativa al formulario de
-            arriba y no como parte de la lista social de abajo.
-
-            Upstream: `<Main/>` y `<SignInFooters/>` sin nada en medio.
-          */}
-          <TeQrInline />
           <SignInFooters />
         </SingleSignOnFormModeContextProvider>
       </WebAuthnContextProvider>

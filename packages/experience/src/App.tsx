@@ -77,6 +77,16 @@ import './scss/overlayscrollbars.scss';
  */
 import '@/te/theme/register.scss';
 /* TE:END account-flow */
+/*
+ * LOGTO PATCH(te-signin-split): la tarjeta a dos columnas de la pantalla de acceso.
+ *
+ * Se importa aquí y no desde el componente por el mismo motivo que la hoja de arriba: ensancha
+ * `.logto_main-content`, que es de upstream, y las hojas de las páginas se cargan antes. Importada
+ * al final gana los empates de especificidad en vez de perderlos en silencio.
+ *
+ * Upstream: (import nuevo)
+ */
+import '@/te/theme/signin-split.scss';
 
 handleSearchParametersData();
 

@@ -13,12 +13,19 @@ import styles from '../index.module.scss';
 import useTeChannel from '../use-te-channel';
 
 /**
- * El cuerpo del canal QR: el código, su cuenta atrás, el número de emparejamiento y el estado.
+ * El cuerpo del canal QR **en su propia pantalla** (`TeQrPage`): el código a tamaño de mano, su
+ * cuenta atrás, el número de emparejamiento y el estado.
  *
- * Vive en un componente propio porque se pinta en dos sitios distintos y **tiene que ser el
- * mismo** en los dos: incrustado en «Sign in to your account» en escritorio (C1) y en su propia
- * pantalla de factor en móvil (C1 otra vez, por el otro lado). Dos copias se habrían separado en
- * la primera corrección que alguien hiciera en una sola.
+ * ## Por qué la columna del acceso ya no usa esto
+ *
+ * Antes se pintaba también incrustado bajo el formulario de «Sign in to your account». Ese sitio
+ * ya no existe: en el acceso el código vive en la columna de la tarjeta (`TeSignInAside`), que no
+ * es este componente con otro margen sino otra composición —título, nota, sin enlace de «otro
+ * método», sin la pista de «¿no puedes escanear?» porque el propio formulario está al lado—.
+ *
+ * Lo que sí comparten, que es lo que importaba, es el **motor**: `useTeChannel` y las mismas
+ * piezas (`TeQrCanvas`, `TeCountdown`, `TeStatus`). Dos pantallas con dos máquinas distintas se
+ * habrían separado a la primera corrección; dos maquetaciones sobre la misma máquina, no.
  */
 
 type Props = {
@@ -48,7 +55,9 @@ const conLado = (lado: number): CSSProperties =>
 const TeQrPanel = ({ hasSalida = true }: Props) => {
   const { t } = useTranslation();
   const { isMobile } = usePlatform();
-  const { fase, codigo, pairCode, correccionReloj, abrirQr } = useTeChannel({ canal: 'qr' });
+  const { fase, huboEscaneo, codigo, pairCode, correccionReloj, abrirQr } = useTeChannel({
+    canal: 'qr',
+  });
   const lado = isMobile ? ladoMovil : ladoEscritorio;
 
   useEffect(() => {
@@ -56,6 +65,15 @@ const TeQrPanel = ({ hasSalida = true }: Props) => {
   }, [abrirQr]);
 
   const terminado = fase === 'rechazado' || fase === 'caducado' || fase === 'fallo';
+
+  /*
+   * La cuenta atrás desaparece en cuanto el canal dice que el código ya está reclamado. La
+   * rotación de verdad ya estaba parada —la máquina ignora los marcos `code` posteriores a
+   * `escaneado`—, así que lo único que quedaba era un reloj corriendo hacia una renovación que
+   * no iba a ocurrir. Un código ya cogido que anuncia que va a cambiar invita a esperar a que
+   * cambie en vez de a terminar en el móvil, que es lo que toca.
+   */
+  const rotando = fase === 'abriendo' || fase === 'esperando';
 
   return (
     <div className={styles.contenedor} style={conLado(lado)}>
@@ -71,7 +89,7 @@ const TeQrPanel = ({ hasSalida = true }: Props) => {
         </div>
       )}
 
-      {!terminado && codigo && (
+      {rotando && codigo && (
         <TeCountdown correccionReloj={correccionReloj} expiraEn={codigo.displayExpiresAt} />
       )}
 
@@ -89,7 +107,7 @@ const TeQrPanel = ({ hasSalida = true }: Props) => {
         </div>
       )}
 
-      <TeStatus canal="qr" fase={fase} />
+      <TeStatus canal="qr" fase={fase} hasEscaneo={huboEscaneo} />
 
       {!terminado && <div className={styles.pista}>{t('te.qr.no_camera')}</div>}
 

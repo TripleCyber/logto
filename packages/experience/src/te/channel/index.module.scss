@@ -177,17 +177,9 @@
   color: var(--color-type-secondary);
 }
 
-/* ── El QR de escritorio, incrustado en la pantalla de acceso ─────────────
-   Va bajo su propio separador para que no se lea como parte del formulario
-   de arriba ni de la lista social de abajo. */
-
-.incrustado {
-  @include _.flex-column;
-  @include _.full-width;
-  gap: _.unit(3);
-  align-items: center;
-  margin-top: _.unit(4);
-}
+/* El QR de escritorio ya no se incrusta bajo el formulario: vive en la columna
+   izquierda de la tarjeta de acceso, que se maqueta en
+   `TeSignInAside/index.module.scss` y `te/theme/signin-split.scss`. */
 
 /* ── Foco visible ────────────────────────────────────────────────────────
    Obligatorio para teclado. `:focus-visible` no dispara al tocar, así que no

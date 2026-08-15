@@ -40,9 +40,10 @@ const TePushPage = () => {
   const { t } = useTranslation();
   const { identifierInputValue } = useContext(UserInteractionContext);
   const { hayPush, politicaSelector, resuelto } = useTeAvailability();
-  const { fase, matchDigits, selectorAbierto, abrirPush, reintentarPush } = useTeChannel({
-    canal: 'push',
-  });
+  const { fase, huboEscaneo, matchDigits, selectorAbierto, abrirPush, reintentarPush } =
+    useTeChannel({
+      canal: 'push',
+    });
 
   /**
    * `eager` es un opt-in del tenant y su coste está escrito al lado de la bandera, en el
@@ -85,7 +86,7 @@ const TePushPage = () => {
           </div>
         )}
 
-        <TeStatus canal="push" fase={fase} />
+        <TeStatus canal="push" fase={fase} hasEscaneo={huboEscaneo} />
 
         {listaPedida ? (
           <>
