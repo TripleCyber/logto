@@ -10,8 +10,10 @@ import {
   listaDispositivosGuard,
   retoPushGuard,
   sesionQrGuard,
+  sondeoPushTeApiGuard,
   sondeoTeApiGuard,
   transaccionGuard,
+  type DespachoTeApi,
   type InterruptoresCanal,
   type MarcoCanal,
 } from './types.js';
@@ -195,13 +197,27 @@ export class TeApiClient {
     );
   }
 
-  async estadoPush(challengeId: string, txnId: string): Promise<MarcoCanal> {
-    const { frame } = await this.#llamar(
+  /**
+   * Sondeo del push. Devuelve el marco **y a dónde fue el aviso**.
+   *
+   * `dispatch` viene `null` mientras te-api no ha despachado: su trabajador de fondo es quien
+   * resuelve el identificador, y lo hace fuera del ciclo de petición justo para que la latencia
+   * del despacho no diga si la cuenta existe (PU-4). Por eso la etiqueta llega por aquí y no en
+   * la respuesta de `despacharPush`, que se emite antes de que haya destino que nombrar.
+   */
+  async estadoPush(
+    challengeId: string,
+    txnId: string
+  ): Promise<{ frame: MarcoCanal; despacho?: DespachoTeApi }> {
+    const { frame, dispatch } = await this.#llamar(
       { metodo: 'POST', ruta: `${rutas.retoPush(challengeId)}/state`, cuerpo: { txnId } },
-      sondeoTeApiGuard
+      sondeoPushTeApiGuard
     );
 
-    return frame;
+    // Sale tal cual llegó. Quien lo recorta es la ruta, con `enmascararDespacho`, en el mismo
+    // sitio y por la misma razón que recorta la lista de dispositivos: la frontera hacia el
+    // navegador es una sola y está donde se escribe `ctx.body`.
+    return { frame, ...(dispatch ? { despacho: dispatch } : {}) };
   }
 
   /** Igual que {@link confirmarSesionQr}: el `code` se queda en este servidor. */

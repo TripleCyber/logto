@@ -87,7 +87,13 @@ const cliente = {
   })),
   rotarCodigo: jest.fn(),
   estadoSesionQr: jest.fn(async () => ({ t: 'code' })),
-  estadoPush: jest.fn(async () => ({ t: 'expired' })),
+  // El sondeo del push devuelve el marco **y** la etiqueta de destino. Son dos cosas y llegan
+  // juntas: ver `estadoPush` en `#src/te/client.js`.
+  estadoPush: jest.fn(
+    async (): Promise<{ frame: { t: string }; despacho?: Record<string, unknown> }> => ({
+      frame: { t: 'expired' },
+    })
+  ),
   confirmarSesionQr: jest.fn(async () => ({
     redirectTo: 'https://logto.test/callback/conector-te?code=el-code-secreto&state=st-1',
   })),
@@ -224,6 +230,105 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
     ]);
   });
 
+  describe('la etiqueta de destino: a dónde fue el aviso', () => {
+    it('un solo destino sale con categoría y cubeta, y nada más', async () => {
+      leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
+      cliente.estadoPush.mockResolvedValue({
+        frame: { t: 'claimed' },
+        despacho: { count: 1, kind: 'tablet', lastSeen: 'this_week' },
+      });
+
+      const ctx = contexto();
+      await handler('post', `${prefijo}/poll`)(ctx, siguiente);
+
+      expect(ctx.body).toEqual({
+        frame: { t: 'claimed' },
+        retryAfterMs: 700,
+        dispatch: { count: 1, kind: 'tablet', lastSeen: 'this_week' },
+      });
+    });
+
+    it('con abanico sólo sale cuántos, aunque te-api mande más', async () => {
+      leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
+      // Con abanico, te-api no manda `kind`. Que aquí se simule que sí es el punto: la
+      // proyección es la segunda cerradura, y tiene que aguantar aunque el servidor cambie.
+      cliente.estadoPush.mockResolvedValue({
+        frame: { t: 'claimed' },
+        despacho: { count: 3, kind: 'phone', lastSeen: 'today' },
+      });
+
+      const ctx = contexto();
+      await handler('post', `${prefijo}/poll`)(ctx, siguiente);
+
+      expect((ctx.body as { dispatch: unknown }).dispatch).toEqual({ count: 3 });
+    });
+
+    it('un nombre o un modelo no llegan al navegador aunque el servidor los mande', async () => {
+      leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
+      cliente.estadoPush.mockResolvedValue({
+        frame: { t: 'claimed' },
+        despacho: {
+          count: 1,
+          kind: 'phone',
+          lastSeen: 'today',
+          label: 'iPhone de Ana',
+          model: 'iPhone 15 Pro',
+          lastSeenAt: '2026-08-15T10:00:00.000Z',
+        },
+      });
+
+      const ctx = contexto();
+      await handler('post', `${prefijo}/poll`)(ctx, siguiente);
+
+      const { dispatch } = ctx.body as { dispatch: Record<string, unknown> };
+      // Sin ordenar: la proyección construye el objeto clave a clave y en este orden, así que la
+      // aserción exacta es más fuerte y además rompe si alguien mete una clave por el medio.
+      expect(Object.keys(dispatch)).toEqual(['count', 'kind', 'lastSeen']);
+      expect(JSON.stringify(ctx.body)).not.toContain('Ana');
+    });
+
+    it('un número absurdo se recorta en vez de creerse', async () => {
+      leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
+      cliente.estadoPush.mockResolvedValue({
+        frame: { t: 'claimed' },
+        despacho: { count: 900 },
+      });
+
+      const ctx = contexto();
+      await handler('post', `${prefijo}/poll`)(ctx, siguiente);
+
+      // Sólo puede venir de un servidor roto o manipulado; pintar «a tus 900 dispositivos» sería
+      // creerle. El tope es el mismo que el de la lista.
+      expect((ctx.body as { dispatch: unknown }).dispatch).toEqual({ count: 5 });
+    });
+
+    it('mientras no se ha despachado no hay etiqueta, y la clave ni aparece', async () => {
+      leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
+      cliente.estadoPush.mockResolvedValue({ frame: { t: 'claimed' } });
+
+      const ctx = contexto();
+      await handler('post', `${prefijo}/poll`)(ctx, siguiente);
+
+      expect(Object.keys(ctx.body as Record<string, unknown>)).toEqual(['frame', 'retryAfterMs']);
+    });
+
+    it('el canal QR no tiene destino que nombrar', async () => {
+      leerEstadoCanal.mockResolvedValue({
+        canal: 'qr',
+        txnId: 'txn-1',
+        sessionId: 'sesion-1',
+        verificationId: 'verificacion-1',
+        connectorId: 'conector-te',
+        credenciales: { channelSecret: 's', channelHash: huellaDe('el-verifier') },
+      });
+
+      const ctx = contexto({ verifier: 'el-verifier' });
+      await handler('post', `${prefijo}/poll`)(ctx, siguiente);
+
+      expect(Object.keys(ctx.body as Record<string, unknown>)).toEqual(['frame', 'retryAfterMs']);
+    });
+  });
+
   it('la lista está cerrada mientras no haya fallado ningún reto', async () => {
     leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
 
@@ -235,7 +340,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
 
   it('un reto caducado la desbloquea; uno aprobado no', async () => {
     leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
-    cliente.estadoPush.mockResolvedValue({ t: 'expired' });
+    cliente.estadoPush.mockResolvedValue({ frame: { t: 'expired' } });
 
     await handler('post', `${prefijo}/poll`)(contexto(), siguiente);
 
@@ -246,7 +351,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
     );
 
     escribirEstadoCanal.mockClear();
-    cliente.estadoPush.mockResolvedValue({ t: 'approved' });
+    cliente.estadoPush.mockResolvedValue({ frame: { t: 'approved' } });
 
     await handler('post', `${prefijo}/poll`)(contexto(), siguiente);
 

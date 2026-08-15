@@ -128,6 +128,85 @@ export const ritmoSondeoMs = (marco: MarcoCanal): number => {
 
 /* ─────────────────────────── Canal push y dispositivos ─────────────────────── */
 
+const categoriaDispositivo = z.enum(['phone', 'tablet', 'desktop']);
+const antiguedadDispositivo = z.enum(['today', 'this_week', 'older']);
+
+/**
+ * A dónde fue el aviso, enmascarado. Lo que la pantalla de espera puede decir.
+ *
+ * Llega por el **sondeo** y no por el despacho, y eso no es un capricho del transporte: cuando
+ * `POST …/push` responde, te-api todavía no ha despachado nada. La resolución identificador →
+ * sujeto → dispositivos ocurre en su trabajador de fondo justo para que la latencia del despacho
+ * no diga si la cuenta existe (PU-4). Preguntar «¿a qué dispositivo?» en el momento del despacho
+ * es pedirle al servidor que resuelva dentro del ciclo de petición, que es exactamente lo que esa
+ * mitigación evita.
+ *
+ * `null` mientras no se ha despachado — para un reto real y para uno señuelo por igual.
+ */
+const despachoTeApiGuard = z.object({
+  count: z.number(),
+  kind: z.string().optional(),
+  lastSeen: z.string().optional(),
+});
+
+/** Lo que te-api dice. **No es lo que ve el navegador**: en medio va {@link enmascararDespacho}. */
+export type DespachoTeApi = z.infer<typeof despachoTeApiGuard>;
+
+/** Lo único de la etiqueta que puede llegar al navegador. */
+type DespachoPush = {
+  /** Cuántos destinos recibieron el aviso. */
+  count: number;
+  /** Sólo con un destino. Con abanico te-api lo omite: sería entregar la lista. */
+  kind?: z.infer<typeof categoriaDispositivo>;
+  lastSeen?: z.infer<typeof antiguedadDispositivo>;
+};
+
+/**
+ * Proyección con lista blanca, igual que {@link enmascararDispositivo} y por lo mismo: se
+ * construye un objeto nuevo, así que un campo nuevo en te-api —un nombre, un modelo, una marca de
+ * tiempo— no llega a la pantalla de acceso aunque el servidor lo mande.
+ *
+ * El número se recorta a `[1, topeDispositivos]` y se redondea: una etiqueta fuera de rango sólo
+ * puede venir de un servidor roto o manipulado, y pintar «a tus 900 dispositivos» sería creerle.
+ *
+ * `kind` y `lastSeen` **sólo se copian cuando el destino fue uno**. Con abanico, te-api ya no los
+ * manda; esta comprobación es la segunda cerradura, para que un servidor que empezara a mandarlos
+ * no convirtiera la pantalla en «tienes 3 dispositivos, y el más reciente es una tableta».
+ */
+export const enmascararDespacho = (bruto: {
+  count: number;
+  kind?: string;
+  lastSeen?: string;
+}): DespachoPush => {
+  const crudo = Number.isFinite(bruto.count) ? Math.trunc(bruto.count) : 1;
+  const count = Math.min(Math.max(crudo, 1), topeDispositivos);
+
+  if (count > 1) {
+    return { count };
+  }
+
+  const kind = categoriaDispositivo.safeParse(bruto.kind);
+  const lastSeen = antiguedadDispositivo.safeParse(bruto.lastSeen);
+
+  return {
+    count,
+    kind: kind.success ? kind.data : 'phone',
+    lastSeen: lastSeen.success ? lastSeen.data : 'older',
+  };
+};
+
+/**
+ * El sondeo del push: lo mismo, **más la etiqueta de destino**.
+ *
+ * Guard aparte y no un campo opcional del de arriba a propósito. El canal QR no tiene destino que
+ * nombrar —el código lo escanea quien lo tenga delante—, así que un campo compartido que sólo
+ * rellena uno de los dos es una invitación a que el otro empiece a rellenarlo sin que nadie se
+ * pregunte qué significaría.
+ */
+export const sondeoPushTeApiGuard = sondeoTeApiGuard.extend({
+  dispatch: despachoTeApiGuard.nullish(),
+});
+
 export const retoPushGuard = z.object({
   challengeId: z.string(),
   expiresAt: z.string(),
@@ -136,9 +215,6 @@ export const retoPushGuard = z.object({
 });
 
 type RetoPush = z.infer<typeof retoPushGuard>;
-
-const categoriaDispositivo = z.enum(['phone', 'tablet', 'desktop']);
-const antiguedadDispositivo = z.enum(['today', 'this_week', 'older']);
 
 /**
  * Dispositivo tal y como lo devuelve te-api. Deliberadamente **ya enmascarado en origen**: la
@@ -208,6 +284,22 @@ export const respuestaCanalGuard = z.object({
 export const respuestaSondeoGuard = z.object({
   frame: marcoCanalGuard,
   retryAfterMs: z.number(),
+  /**
+   * A dónde fue el aviso, para que la pantalla de espera del push deje de decir «a tu dispositivo»
+   * sin decir a cuál. Ausente en el canal QR y ausente mientras no se haya despachado.
+   *
+   * Lo que sale de aquí es lo mismo que sale de la lista de dispositivos —categoría gruesa y
+   * cubeta temporal— y sólo cuando el destino fue uno. El nombre que la persona le puso a su
+   * teléfono no cabe en este tipo, y ésa es la garantía: no es que hoy no se mande, es que no
+   * tiene por dónde salir.
+   */
+  dispatch: z
+    .object({
+      count: z.number(),
+      kind: categoriaDispositivo.optional(),
+      lastSeen: antiguedadDispositivo.optional(),
+    })
+    .optional(),
 });
 
 export const respuestaDispositivosGuard = z.object({

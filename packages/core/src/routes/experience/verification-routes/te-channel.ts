@@ -23,6 +23,7 @@ import {
   type EstadoCanalTe,
 } from '#src/te/storage.js';
 import {
+  enmascararDespacho,
   enmascararDispositivo,
   estadosTerminales,
   respuestaCanalGuard,
@@ -32,6 +33,7 @@ import {
   retoPushGuard,
   ritmoSondeoMs,
   topeDispositivos,
+  type DespachoTeApi,
   type MarcoCanal,
 } from '#src/te/types.js';
 import type TenantContext from '#src/tenants/TenantContext.js';
@@ -266,13 +268,17 @@ export default function teChannelRoutes<T extends ExperienceInteractionRouterCon
       const estado = await cargarEstado(ctx);
       const cliente = clienteTe(config);
 
-      const marco: MarcoCanal =
+      const sondeo: { frame: MarcoCanal; despacho?: DespachoTeApi } =
         estado.canal === 'qr' && estado.sessionId
-          ? await cliente.estadoSesionQr(
-              estado.sessionId,
-              credencialesDe(estado, ctx.request.headers[cabeceraVerifier]?.toString())
-            )
+          ? {
+              frame: await cliente.estadoSesionQr(
+                estado.sessionId,
+                credencialesDe(estado, ctx.request.headers[cabeceraVerifier]?.toString())
+              ),
+            }
           : await cliente.estadoPush(exigirReto(estado), estado.txnId);
+
+      const marco = sondeo.frame;
 
       // PU-12: la lista de dispositivos sólo se abre después de que un reto real haya fallado. Ese
       // fallo cuesta una notificación en la pantalla de bloqueo del titular, que es lo que convierte
@@ -286,7 +292,22 @@ export default function teChannelRoutes<T extends ExperienceInteractionRouterCon
         await escribirEstadoCanal(ctx, provider, { ...estado, selectorDesbloqueado: true });
       }
 
-      ctx.body = { frame: marco, retryAfterMs: ritmoSondeoMs(marco) };
+      /*
+       * La etiqueta de destino: **a dónde fue el aviso**, que es lo que la pantalla de espera del
+       * push no sabía decir. Sale por la misma proyección con lista blanca que la lista de
+       * dispositivos (`enmascararDespacho`), así que lo que llega al navegador son como mucho tres
+       * claves: cuántos destinos, y —sólo si fue uno— categoría gruesa y cubeta temporal. El
+       * nombre que la persona le puso a su teléfono no cabe en el tipo de salida.
+       *
+       * Y llega para un reto real y para uno señuelo por igual: te-api fabrica la del señuelo con
+       * un HMAC del identificador precisamente para que esta línea no pueda delatar si la cuenta
+       * existe (PU-4). Aquí no hay ninguna rama que lo distinga, y no puede haberla.
+       */
+      ctx.body = {
+        frame: marco,
+        retryAfterMs: ritmoSondeoMs(marco),
+        ...(sondeo.despacho ? { dispatch: enmascararDespacho(sondeo.despacho) } : {}),
+      };
 
       return next();
     }

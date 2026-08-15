@@ -143,6 +143,31 @@
   text-align: center;
 }
 
+/* ── A dónde fue el aviso del push ────────────────────────────────────────
+   Una línea, no una tarjeta: es un dato de apoyo del estado que tiene justo
+   encima, no una cosa aparte que compita con él. Y por eso mismo hereda el
+   mismo `text-hint` que el estado en vez de estrenar tamaño — lo que la
+   persona tiene que leer primero son los dos dígitos que va a teclear.
+
+   `flex-wrap` porque la frase lleva una cubeta temporal traducida: en alemán
+   ocupa casi el doble que en inglés, y sin esto el icono empujaría el texto
+   fuera de la caja en una pantalla estrecha. */
+
+.destino {
+  @include _.text-hint;
+  display: flex;
+  flex-wrap: wrap;
+  gap: _.unit(1);
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.destinoIcono {
+  flex-shrink: 0;
+  color: var(--color-type-secondary);
+}
+
 .acciones {
   @include _.flex-column;
   @include _.full-width;

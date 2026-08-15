@@ -1,6 +1,8 @@
 import { trySafe } from '@silverhand/essentials';
 import { HTTPError } from 'ky';
 
+import { type EstadoCanal, type NombreEstado } from './machine';
+
 /**
  * Qué le puede pasar a la pantalla del canal, y cómo se reparte un fallo entre esas cosas.
  *
@@ -83,3 +85,25 @@ export const clasificarFallo = async (error: unknown): Promise<ClaseDeFallo> => 
 
   return codigo !== undefined && codigosSesionPerdida.has(codigo) ? 'sesionCaducada' : 'fallo';
 };
+
+/**
+ * De estado de la máquina a fase de pantalla, en tabla y no en `switch`.
+ *
+ * Es la misma forma que usa `TeStatus` para sus textos, y por el mismo motivo: una tabla se lee de
+ * un vistazo y el compilador exige que estén los siete estados, así que añadir uno a la máquina y
+ * olvidarse de la pantalla deja de compilar en vez de caer en un `default`.
+ *
+ * Vive aquí, al lado del tipo que produce, y no dentro del hook: la traducción de estado a fase no
+ * necesita ningún canal abierto, y sacarla deja el hook para lo que sí lo necesita.
+ */
+const fases: Readonly<Record<NombreEstado, FaseCanal>> = Object.freeze({
+  inicio: 'abriendo',
+  esperando: 'esperando',
+  escaneado: 'escaneado',
+  aprobado: 'aprobado',
+  rechazado: 'rechazado',
+  caducado: 'caducado',
+  fallo: 'fallo',
+});
+
+export const faseDesdeEstado = (estado: EstadoCanal): FaseCanal => fases[estado.nombre];

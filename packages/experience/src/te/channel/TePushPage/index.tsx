@@ -6,6 +6,7 @@ import UserInteractionContext from '@/Providers/UserInteractionContextProvider/U
 import ErrorPage from '@/pages/ErrorPage';
 import Button from '@/shared/components/Button';
 
+import TeDestinoPush from '../TeDestinoPush';
 import TeDevicePicker from '../TeDevicePicker';
 import TeOtherMethodLink from '../TeOtherMethodLink';
 import TeStatus from '../TeStatus';
@@ -31,6 +32,15 @@ import useTeChannel from '../use-te-channel';
  * 3. **«Usar otro método» está siempre a mano**, que es la salida de quien no tenga cartera y no
  *    deba enterarse por esta pantalla de que no la tiene.
  *
+ * ## A dónde fue el aviso
+ *
+ * La pantalla decía «lo hemos enviado a tu dispositivo» — en singular y sin decir a cuál, que es
+ * una frase que no ayuda a nadie. Ahora lo dice, con la **misma etiqueta enmascarada** que la
+ * lista de dispositivos: categoría gruesa y cubeta temporal si el destino fue uno, y sólo el
+ * número si el aviso se abrió en abanico. El nombre real del aparato no cabe en el tipo que
+ * cruza; se puede enseñar después de aprobar, no antes. Ver `TeDestinoPush`, donde está el porqué
+ * entero, el estado «enviando» y el coste.
+ *
  * ## Los dos dígitos
  *
  * Se enseñan aquí y se teclean allí (PU-1). **Nunca tres botones**: elegir entre tres números es
@@ -42,7 +52,7 @@ const TePushPage = () => {
   const { t } = useTranslation();
   const { identifierInputValue } = useContext(UserInteractionContext);
   const { hayPush, politicaSelector, resuelto } = useTeAvailability();
-  const { fase, huboEscaneo, matchDigits, selectorAbierto, abrirPush, reintentarPush } =
+  const { fase, huboEscaneo, matchDigits, despacho, selectorAbierto, abrirPush, reintentarPush } =
     useTeChannel({
       canal: 'push',
     });
@@ -89,6 +99,15 @@ const TePushPage = () => {
         )}
 
         <TeStatus canal="push" fase={fase} hasEscaneo={huboEscaneo} />
+
+        {/*
+          A dónde fue el aviso. Va **debajo** del estado y no en su lugar: el estado dice qué hay
+          que hacer y esto dice a dónde se mandó, que son dos preguntas distintas. Y desaparece
+          con el canal muerto, igual que los dígitos: con el reto caducado ya no hay ningún aviso
+          esperando en ningún sitio, así que seguir diciendo «enviado a tu teléfono» mandaría a
+          mirar un móvil donde no queda nada que aprobar.
+        */}
+        {!muerto && <TeDestinoPush despacho={despacho} />}
 
         {listaPedida ? (
           <>

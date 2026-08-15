@@ -27,7 +27,17 @@ const te = {
   },
   push: {
     title: 'Apruébalo en tu móvil',
-    description: 'Hemos enviado un aviso a tu dispositivo. Apruébalo ahí para continuar.',
+    /**
+     * LOGTO PATCH(te-push-destino): deja de afirmar un envío que todavía no ha ocurrido.
+     *
+     * Decía «Hemos enviado un aviso a tu dispositivo» — y en el momento en que esta pantalla
+     * aparece no se ha enviado nada: el servidor resuelve el identificador en un trabajador de
+     * fondo para que la latencia de la respuesta no diga si la cuenta existe (PU-4). Y decía «tu
+     * dispositivo», en singular y sin decir cuál, que no ayuda a nadie. A dónde fue el aviso es
+     * ahora una línea propia (`sending` / `sent_*`), dicha cuando es verdad; ésta dice qué hay
+     * que hacer, que es verdad desde el primer segundo.
+     */
+    description: 'Apruébalo en tu cartera TripleEnable para continuar.',
     match_label: 'Teclea estas cifras en el móvil',
     match_hint: 'Solo aparecen aquí; nunca viajan en el aviso.',
     another_device: 'Usar otro dispositivo',
@@ -41,6 +51,33 @@ const te = {
     last_seen_older: 'visto hace tiempo',
     device_option: '{{kind}} · {{lastSeen}}',
     send_here: 'Enviar aquí',
+    /**
+     * LOGTO PATCH(te-push-destino): a dónde fue de verdad el aviso.
+     *
+     * La pantalla decía «a tu dispositivo» —en singular y sin decir a cuál—. Éstas lo dicen, con
+     * la misma etiqueta enmascarada que ya pinta la lista de dispositivos: categoría gruesa y
+     * cubeta temporal. Nunca el nombre que la persona le puso al aparato, nunca el modelo. Eso se
+     * puede enseñar **después** de aprobar; antes, quien mira esta pantalla es sólo quien tecleó
+     * un identificador.
+     *
+     * `sending` no es un relleno: durante unos segundos es la verdad. El servidor resuelve el
+     * identificador en un trabajador de fondo, fuera del ciclo de petición, para que la latencia
+     * de la respuesta no diga si la cuenta existe (PU-4) — cuando esta pantalla aparece, todavía
+     * no ha salido nada.
+     */
+    sending: 'Enviando el aviso…',
+    sent_phone: 'Enviado a tu teléfono · {{lastSeen}}',
+    sent_tablet: 'Enviado a tu tableta · {{lastSeen}}',
+    sent_desktop: 'Enviado a tu ordenador · {{lastSeen}}',
+    /**
+     * El abanico de PU-11: el aviso va a todos los elegibles. Se dice cuántos y nada más — con el
+     * aviso yendo a toda la flota, «teléfono» describiría un aparato de una lista, y esa lista es
+     * lo que PU-12 no entrega.
+     *
+     * El hueco se llama `total` y no `count` a propósito: `count` es el nombre reservado que
+     * enciende la maquinaria de plurales de i18next, y esta cadena sólo se usa con dos o más.
+     */
+    sent_many: 'Enviado a tus {{total}} dispositivos',
   },
   method: {
     qr_title: 'Escanear un código',

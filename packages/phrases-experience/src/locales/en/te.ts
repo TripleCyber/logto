@@ -33,7 +33,17 @@ const te = {
   },
   push: {
     title: 'Approve on your phone',
-    description: 'We sent a request to your device. Approve it there to continue.',
+    /**
+     * LOGTO PATCH(te-push-destino): it no longer claims a send that has not happened.
+     *
+     * It used to say «We sent a request to your device» — and at the moment this screen appears,
+     * nothing has been sent: the server resolves the identifier in a background worker so that
+     * the response latency cannot say whether the account exists (PU-4). It also said «your
+     * device», singular and without saying which, which helps nobody. Where the request went is
+     * now a line of its own (`sending` / `sent_*`), said when it is true; this one says what to
+     * do, which is true from the first second.
+     */
+    description: 'Approve the request in your TripleEnable wallet to continue.',
     match_label: 'Type these digits on your phone',
     match_hint: 'They are only shown here, never in the notification.',
     another_device: 'Use another device',
@@ -47,6 +57,33 @@ const te = {
     last_seen_older: 'used a while ago',
     device_option: '{{kind}} · {{lastSeen}}',
     send_here: 'Send here',
+    /**
+     * LOGTO PATCH(te-push-destino): where the request actually went.
+     *
+     * The screen used to say «your device» — singular, and without saying which. These say it,
+     * with the same masked label the device list already shows: a coarse category and a time
+     * bucket. Never the name the person gave the device, never the model. That can be shown
+     * **after** approval; before it, whoever is looking at this screen is only whoever typed an
+     * identifier.
+     *
+     * `sending` is not a placeholder: for a few seconds it is the truth. The server resolves the
+     * identifier in a background worker, outside the request cycle, so that the response latency
+     * cannot say whether the account exists (PU-4) — when this screen appears, nothing has been
+     * sent yet.
+     */
+    sending: 'Sending the request…',
+    sent_phone: 'Sent to your phone · {{lastSeen}}',
+    sent_tablet: 'Sent to your tablet · {{lastSeen}}',
+    sent_desktop: 'Sent to your computer · {{lastSeen}}',
+    /**
+     * The fan-out of PU-11: the request goes to every eligible device. It says how many and
+     * nothing else — with the request going to the whole fleet, «phone» would describe one device
+     * out of a list, and that list is what PU-12 does not hand over.
+     *
+     * The placeholder is `total` and not `count` on purpose: `count` is the reserved name that
+     * turns on i18next's plural machinery, and this string is only ever used with two or more.
+     */
+    sent_many: 'Sent to your {{total}} devices',
   },
   method: {
     qr_title: 'Scan a code',

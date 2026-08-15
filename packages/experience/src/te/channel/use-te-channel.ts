@@ -13,11 +13,12 @@ import {
   confirmarCanal,
   despacharPush,
   sondear,
+  type DespachoPush,
   type RetoPush,
 } from './api';
 import { desfase, restanteMs } from './clock';
 import { ritmoSinRedMs, techoSesionMs, topeReaperturas } from './config';
-import { clasificarFallo, type FaseCanal } from './fases';
+import { clasificarFallo, faseDesdeEstado, type FaseCanal } from './fases';
 import {
   analizarMarco,
   aplicar,
@@ -25,7 +26,6 @@ import {
   estadoInicial,
   type CodigoCanal,
   type EstadoCanal,
-  type NombreEstado,
 } from './machine';
 import { comoTexto, numeroDeEmparejamiento } from './pairing';
 import useIsMounted from './use-is-mounted';
@@ -60,25 +60,6 @@ type Opciones = {
   readonly canal: 'qr' | 'push';
 };
 
-/**
- * De estado de la máquina a fase de pantalla, en tabla y no en `switch`.
- *
- * Es la misma forma que usa `TeStatus` para sus textos, y por el mismo motivo: una tabla se lee de
- * un vistazo y el compilador exige que estén los siete estados, así que añadir uno a la máquina y
- * olvidarse de la pantalla deja de compilar en vez de caer en un `default`.
- */
-const fases: Readonly<Record<NombreEstado, FaseCanal>> = Object.freeze({
-  inicio: 'abriendo',
-  esperando: 'esperando',
-  escaneado: 'escaneado',
-  aprobado: 'aprobado',
-  rechazado: 'rechazado',
-  caducado: 'caducado',
-  fallo: 'fallo',
-});
-
-const faseDesdeEstado = (estado: EstadoCanal): FaseCanal => fases[estado.nombre];
-
 const useTeChannel = ({ canal }: Opciones) => {
   const [estado, setEstado] = useState<EstadoCanal>(estadoInicial);
   const [fase, setFase] = useState<FaseCanal>('inactivo');
@@ -100,6 +81,16 @@ const useTeChannel = ({ canal }: Opciones) => {
   const [reto, setReto] = useState<RetoPush>();
   /** Se abre cuando un reto push termina mal: es la llave del selector de dispositivos (PU-12). */
   const [selectorAbierto, setSelectorAbierto] = useState(false);
+  /**
+   * A dónde fue el aviso del push, enmascarado. `undefined` mientras no se sepa.
+   *
+   * Lo trae el sondeo y no el despacho, y eso no es una elección de esta pantalla: cuando el
+   * despacho responde, el servidor todavía no ha resuelto el identificador —lo hace en un
+   * trabajador de fondo, fuera del ciclo de petición, para que la latencia de esa respuesta no
+   * diga si la cuenta existe (PU-4)—. Así que hay una ventana en la que la pantalla sabe que hay
+   * un reto y **todavía no** a dónde fue, y esa ventana se dice, no se disimula.
+   */
+  const [despacho, setDespacho] = useState<DespachoPush>();
 
   /**
    * El verifier vive en memoria de la pestaña y sólo sale por la cabecera del canal. No se guarda
@@ -298,6 +289,16 @@ const useTeChannel = ({ canal }: Opciones) => {
       correccionReloj.current = desfase(respuesta.cabeceraDate, Date.now());
     }
 
+    /*
+     * La etiqueta sólo se pisa cuando viene: el servidor la manda en cuanto despacha y la sigue
+     * mandando en cada vuelta, pero una vuelta que la perdiera —un despliegue a medias, un marco
+     * terminal servido por otra rama— no puede borrar de la pantalla lo que ya se dijo. Quien la
+     * limpia es un despacho nuevo, en `despacharYEsperar`.
+     */
+    if (respuesta.despacho) {
+      setDespacho(respuesta.despacho);
+    }
+
     const marco = analizarMarco(respuesta.frame);
 
     if (!marco) {
@@ -460,6 +461,10 @@ const useTeChannel = ({ canal }: Opciones) => {
 
       setFase('abriendo');
       fijarEstado(estadoInicial);
+      // Reto nuevo, destino nuevo. Arrastrar la etiqueta del anterior diría «enviado a tu
+      // teléfono» de un aviso que todavía no ha salido — y, tras elegir otro dispositivo, diría
+      // además el dispositivo equivocado.
+      setDespacho(undefined);
 
       try {
         await antes?.();
@@ -540,6 +545,8 @@ const useTeChannel = ({ canal }: Opciones) => {
     codigo,
     pairCode,
     matchDigits: reto?.matchDigits,
+    /** Ver la declaración: a dónde fue el aviso, o `undefined` mientras no se sepa. */
+    despacho,
     expiraEn: reto?.expiresAt,
     selectorAbierto,
     correccionReloj: correccionReloj.current,

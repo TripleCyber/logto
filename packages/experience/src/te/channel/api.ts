@@ -56,12 +56,35 @@ export type DispositivoEnmascarado = {
   readonly lastSeen: 'today' | 'this_week' | 'older';
 };
 
+/**
+ * A dónde fue el aviso del push, enmascarado.
+ *
+ * Es lo que la pantalla de espera necesita para dejar de decir «a tu dispositivo» sin decir a
+ * cuál. Llega por el **sondeo** y no al despachar, y la razón es del servidor: cuando
+ * `despacharPush` responde todavía no se ha despachado nada — te-api resuelve el identificador en
+ * un trabajador de fondo, fuera del ciclo de petición, justo para que la latencia de esa respuesta
+ * no diga si la cuenta existe (PU-4).
+ *
+ * Y llega igual cuando el reto es un **señuelo**: te-api fabrica una etiqueta con un HMAC del
+ * identificador para que esta línea no pueda delatar si la cuenta existe. Esta pantalla no
+ * distingue los dos casos y **no puede**: recibe una etiqueta y la pinta.
+ */
+export type DespachoPush = {
+  /** Cuántos destinos recibieron el aviso. */
+  readonly count: number;
+  /** Sólo cuando el destino fue uno. Con abanico no viene: sería entregar la lista (PU-12). */
+  readonly kind?: 'phone' | 'tablet' | 'desktop';
+  readonly lastSeen?: 'today' | 'this_week' | 'older';
+};
+
 export type Sondeo = {
   readonly frame: MarcoCanal;
   /** Ritmo dictado por el servidor. **0 significa PARAR**, no sondear sin pausa. */
   readonly retryAfterMs: number;
   /** Cabecera `Date` de la respuesta, para corregir el reloj de la pantalla (OP-2). */
   readonly cabeceraDate: string | undefined;
+  /** Ver {@link DespachoPush}. Ausente en el QR y mientras no se haya despachado. */
+  readonly despacho?: DespachoPush;
 };
 
 /**
@@ -119,11 +142,21 @@ export const sondear = async (verifier?: string): Promise<Sondeo> => {
     headers: verifier ? { [cabeceraVerifier]: verifier } : undefined,
   });
 
-  const cuerpo = await respuesta.json<{ frame: MarcoCanal; retryAfterMs: number }>();
+  const cuerpo = await respuesta.json<{
+    frame: MarcoCanal;
+    retryAfterMs: number;
+    dispatch?: DespachoPush;
+  }>();
 
   // `Headers.get` devuelve `null` cuando la cabecera falta; se normaliza aquí para que el resto
-  // del canal maneje una sola forma de «no hay dato».
-  return { ...cuerpo, cabeceraDate: respuesta.headers.get('Date') ?? undefined };
+  // del canal maneje una sola forma de «no hay dato». El nombre del campo se castellaniza aquí, en
+  // el borde, que es donde el resto del canal deja de hablar el idioma del servidor.
+  return {
+    frame: cuerpo.frame,
+    retryAfterMs: cuerpo.retryAfterMs,
+    cabeceraDate: respuesta.headers.get('Date') ?? undefined,
+    ...(cuerpo.dispatch ? { despacho: cuerpo.dispatch } : {}),
+  };
 };
 
 /**
