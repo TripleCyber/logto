@@ -3,6 +3,8 @@ import { InteractionEvent, UsersPasswordEncryptionMethod } from '@logto/schemas'
 import { argon2Verify } from 'hash-wasm';
 
 import RequestError from '#src/errors/RequestError/index.js';
+/** LOGTO PATCH(social-sign-in-only-targets): shared with the Experience API's validator. */
+import { assertSocialTargetsAllowRegistration } from '#src/libraries/verification-helpers/social-verification.js';
 import type TenantContext from '#src/tenants/TenantContext.js';
 import assertThat from '#src/utils/assert-that.js';
 
@@ -169,6 +171,34 @@ export default async function verifyProfile(
 
   if (event === InteractionEvent.Register) {
     verifyProfileIdentifiers(profile, identifiers);
+
+    /**
+     * LOGTO PATCH(social-sign-in-only-targets): a social connector target listed in
+     * `socialSignIn.signInOnlyConnectorTargets` may authenticate an existing user but must never
+     * create one.
+     *
+     * This is the deprecated Interaction API's registration choke point: `POST
+     * /api/interaction/submit` always reaches `verifyProfile`, and this branch is the only way it
+     * provisions a user (`submitInteraction` → `handleSubmitRegister` → `insertUser`). Unlike the
+     * Experience API it never touches `SignInExperienceValidator`, and its own sign-in-experience
+     * checks do not look at social identifiers at all (`verifyIdentifierSettings` returns early
+     * for `connectorId`), so without this call the router mounted at `/api/interaction` — still
+     * mounted unconditionally in `routes/init.ts` — is a complete bypass of the rule enforced on
+     * the Experience API side.
+     *
+     * Upstream: (check does not exist)
+     */
+    await assertSocialTargetsAllowRegistration(
+      {
+        libraries: tenant.libraries,
+        getSignInExperience: async () =>
+          tenant.queries.signInExperiences.findDefaultSignInExperience(),
+      },
+      (identifiers ?? []).flatMap((identifier) =>
+        identifier.key === 'social' ? [identifier.connectorId] : []
+      )
+    );
+
     await verifyProfileNotRegisteredByOtherUserAccount(tenant, profile, identifiers);
 
     return interaction;

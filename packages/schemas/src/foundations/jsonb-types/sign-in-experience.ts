@@ -162,11 +162,28 @@ export type SocialSignIn = {
    * Setting this to `true` will bypass that requirement.
    */
   skipRequiredIdentifiers?: boolean;
+  /**
+   * LOGTO PATCH(social-sign-in-only-targets): connector targets that may authenticate an existing
+   * user but must never create one.
+   * A social identity is a bearer credential the client holds; for some providers (hardware
+   * wallets, device keys, machine identities) an unknown key means "unknown party", not "new
+   * user", so account creation must happen through a separate, deliberate enrollment path.
+   * Optional and empty by default, so every tenant that does not set it keeps upstream behaviour.
+   *
+   * Upstream: (field does not exist)
+   */
+  signInOnlyConnectorTargets?: string[];
 };
 
 export const socialSignInGuard = z.object({
   automaticAccountLinking: z.boolean().optional(),
   skipRequiredIdentifiers: z.boolean().optional(),
+  /**
+   * LOGTO PATCH(social-sign-in-only-targets): see {@link SocialSignIn.signInOnlyConnectorTargets}.
+   *
+   * Upstream: (field does not exist)
+   */
+  signInOnlyConnectorTargets: z.string().array().optional(),
 }) satisfies ToZodObject<SocialSignIn>;
 
 export const connectorTargetsGuard = z.string().array();

@@ -35,6 +35,7 @@ import {
   disablePasswordExpiration,
   enableAllPasswordSignInMethods,
   enablePasswordExpiration,
+  enableSocialSignInConnectorTargets,
 } from '#src/helpers/sign-in-experience.js';
 import {
   generateUsername,
@@ -432,6 +433,7 @@ describe('admin console user management', () => {
       connectorId: mockSocialConnectorId,
       config: mockSocialConnectorConfig,
     });
+    await enableSocialSignInConnectorTargets();
 
     const createdUserId = await signInWithSocial(
       connectorId,

@@ -60,6 +60,15 @@ export const defaultMetadata: ConnectorMetadata = {
     },
     scopeFormItem,
     {
+      key: 'enablePkce',
+      label: 'Enable PKCE',
+      description:
+        'Protect the authorization code flow with PKCE (RFC 7636) using the `S256` code challenge method, so an intercepted authorization code can not be redeemed. Enable it only if your identity provider supports PKCE: providers that reject unknown authorization parameters will fail with this option on.',
+      type: ConnectorConfigFormItemType.Switch,
+      required: false,
+      defaultValue: false,
+    },
+    {
       key: 'profileMap',
       label: 'Profile Map',
       type: ConnectorConfigFormItemType.Json,

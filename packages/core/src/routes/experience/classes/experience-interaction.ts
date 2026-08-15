@@ -193,7 +193,14 @@ export default class ExperienceInteraction {
   public async setInteractionEvent(interactionEvent: InteractionEvent) {
     await this.signInExperienceValidator.guardInteractionEvent(
       interactionEvent,
-      this.verificationRecords.get(VerificationType.OneTimeToken)?.isVerified
+      this.verificationRecords.get(VerificationType.OneTimeToken)?.isVerified,
+      /**
+       * LOGTO PATCH(social-sign-in-only-targets): hand the verification records to the validator so
+       * switching to `Register` can be rejected for sign-in-only social connector targets.
+       *
+       * Upstream: (argument does not exist)
+       */
+      this.verificationRecordsArray
     );
 
     // `ForgotPassword` interaction event can not interchanged with other events
@@ -316,7 +323,15 @@ export default class ExperienceInteraction {
 
     await this.signInExperienceValidator.guardInteractionEvent(
       InteractionEvent.Register,
-      this.verificationRecords.get(VerificationType.OneTimeToken)?.isVerified
+      this.verificationRecords.get(VerificationType.OneTimeToken)?.isVerified,
+      /**
+       * LOGTO PATCH(social-sign-in-only-targets): the actual user-creation choke point. Hand the
+       * verification records to the validator so a sign-in-only social connector target can never
+       * provision a user, whatever `verificationId` the caller submitted.
+       *
+       * Upstream: (argument does not exist)
+       */
+      this.verificationRecordsArray
     );
     await this.guardCaptcha();
     await this.profile.assertUserMandatoryProfileFulfilled({

@@ -12,6 +12,7 @@ import {
 } from '#src/helpers/experience/enterprise-sso-verification.js';
 import { successfullyCreateSocialVerification } from '#src/helpers/experience/social-verification.js';
 import { expectRejects } from '#src/helpers/index.js';
+import { enableSocialSignInConnectorTargets } from '#src/helpers/sign-in-experience.js';
 import { generateUserId, randomString } from '#src/utils.js';
 
 describe('enterprise sso verification', () => {
@@ -28,6 +29,7 @@ describe('enterprise sso verification', () => {
     const { id: socialConnectorId } = await setSocialConnector();
 
     socialConnectorIdMap.set(mockSocialConnectorId, socialConnectorId);
+    await enableSocialSignInConnectorTargets();
 
     // Make sure single sign on is enabled
     await updateSignInExperience({

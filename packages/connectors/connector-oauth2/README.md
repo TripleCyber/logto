@@ -44,6 +44,8 @@ We ONLY support "Authorization Code" grant type for security consideration and i
 
 *scope*: The scope parameter is used to specify the set of resources and permissions that the client application is requesting access to. The scope parameter is typically defined as a space-separated list of values that represent specific permissions. For example, a scope value of "read write" might indicate that the client application is requesting read and write access to a user's data.
 
+*enablePkce (Optional)*: Whether to protect the authorization code flow with PKCE ([RFC 7636](https://www.rfc-editor.org/rfc/rfc7636)) using the `S256` code challenge method. When enabled, Logto generates a random `code_verifier` per sign-in, sends its SHA-256 challenge in the authorization request, and sends the verifier back in the token request, so an authorization code intercepted on the redirect can not be redeemed by anyone else. It is disabled by default because the authorization request then carries the extra `code_challenge` and `code_challenge_method` parameters, which some OAuth 2.0 providers reject; enable it only if your identity provider supports PKCE.
+
 You are expected to find `authorizationEndpoint`, `tokenEndpoint` and `userInfoEndpoint` in social vendor's documentation.
 
 *authenticationEndpoint*: This endpoint is used to initiate the authentication process. The authentication process typically involves the user logging in and granting authorization for the client application to access their resources.
@@ -104,6 +106,7 @@ Each social identity provider could have their own variant on OAuth standard pro
 | grantType                 | string                 | false    |
 | tokenEndpoint             | string                 | false    |
 | scope                     | string                 | false    |
+| enablePkce                | boolean                | false    |
 | customConfig              | Record<string, string> | false    |
 | profileMap                | ProfileMap             | false    |
 
@@ -176,3 +179,4 @@ After a user links their social account, admins can manage that connection in th
 ## Reference
 
 * [The OAuth 2.0 Authorization Framework](https://www.rfc-editor.org/rfc/rfc6749)
+* [Proof Key for Code Exchange by OAuth Public Clients (PKCE)](https://www.rfc-editor.org/rfc/rfc7636)

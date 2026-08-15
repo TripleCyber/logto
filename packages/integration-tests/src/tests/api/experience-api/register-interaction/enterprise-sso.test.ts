@@ -19,6 +19,7 @@ import {
   successfullyVerifyVerificationCode,
 } from '#src/helpers/experience/verification-code.js';
 import { expectRejects } from '#src/helpers/index.js';
+import { enableSocialSignInConnectorTargets } from '#src/helpers/sign-in-experience.js';
 import { UserApiTest } from '#src/helpers/user.js';
 import { generateEmail } from '#src/utils.js';
 
@@ -106,6 +107,7 @@ describe('should reject the email registration if the email domain is enabled fo
       await clearConnectorsByTypes([ConnectorType.Social]);
       const { id: socialConnectorId } = await setSocialConnector();
       connectorIdMap.set(mockSocialConnectorId, socialConnectorId);
+      await enableSocialSignInConnectorTargets();
     });
 
     afterAll(async () => {
