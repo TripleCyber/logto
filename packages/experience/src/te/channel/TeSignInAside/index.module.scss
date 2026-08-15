@@ -47,22 +47,32 @@
   padding: _.unit(8) _.unit(7);
   background: var(--color-bg-layer-2);
   border-right: _.border(var(--color-line-divider));
-  /* Las mismas esquinas que la tarjeta en escritorio; en móvil la tarjeta es cuadrada. */
+  /*
+   * Las mismas esquinas que la tarjeta, en las dos plataformas.
+   *
+   * Antes había debajo un `:global(body.mobile) .aside { border-radius: 0 }` sin condición de
+   * ancho, y era correcto: con user-agent móvil la tarjeta era cuadrada y a sangre. Desde F5 ya no
+   * lo es —en cuanto hay dos columnas la tarjeta vuelve a ser tarjeta con sus 16 px de radio,
+   * mire el user-agent lo que mire; ver la causa (a) en `te/theme/signin-split.scss`—, así que una
+   * columna cuadrada asomaría por las esquinas. Y por debajo de 820 px no hay columna que
+   * redondear: `display: none`.
+   */
   border-radius: 16px 0 0 16px;
   text-align: center;
   /* Una ventana muy baja no puede cortar el código sin dejar forma de bajar hasta él. */
   overflow-y: auto;
 }
 
-:global(body.mobile) {
-  .aside {
-    border-radius: 0;
-  }
-}
-
 @supports selector(:has(*)) {
   @media (min-width: 820px) {
     .aside {
+      /*
+       * `flex-column` sin argumentos = `align-items: center; justify-content: center`. Ese
+       * `justify-content: center` es la mitad del criterio de F5: la columna centra su contenido
+       * sobre el centro de la tarjeta, y `te/theme/signin-split.scss` se encarga de que el
+       * formulario de al lado caiga sobre esa misma línea. La otra mitad no se puede escribir
+       * aquí: son los rellenos flexibles de `FirstScreenLayout`, que están fuera de esta columna.
+       */
       @include _.flex-column;
       gap: 0;
     }

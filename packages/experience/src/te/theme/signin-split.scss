@@ -8,9 +8,9 @@
  *
  * ## Qué se maqueta aquí y qué no
  *
- * Aquí sólo vive lo que **no cabe en un CSS Module**: el tamaño y el hueco de la tarjeta, que es
- * un antepasado de la columna. Todo lo demás —la columna, su tipografía, su fondo— está en
- * `TeSignInAside/index.module.scss`, donde le corresponde.
+ * Aquí sólo vive lo que **no cabe en un CSS Module**: el tamaño, el hueco y la colocación de la
+ * tarjeta, que es un antepasado de la columna. Todo lo demás —la columna, su tipografía, su fondo—
+ * está en `TeSignInAside/index.module.scss`, donde le corresponde.
  *
  * ## El interruptor
  *
@@ -32,18 +32,111 @@
  * tarjeta, así que tampoco se enseña la columna —la escondería en un sitio en el que no cabe— y la
  * pantalla se queda en el acceso de siempre con la fila del conector, que sigue estando.
  *
+ * `:has()` mira la **presencia del nodo**, no si se ve: por debajo de 820 px la columna sigue en el
+ * DOM con `display: none`, así que el bloque de centrado de aquí abajo —que no está dentro de la
+ * media query— también alcanza al móvil vertical. Es a propósito y es lo que permite acotar el
+ * centrado a esta pantalla sin tocar el resto del acceso de Logto.
+ *
  * ## Especificidad
  *
  * Logto fija el ancho con `body.desktop .main` (0,2,1) y el suyo con `body.mobile .main`. Hay que
  * llevar por delante el `body.<plataforma>` para ganar, y por eso las reglas se escriben dos
  * veces. Esta hoja es SCSS **global**, no un módulo: `:global(...)` no existe aquí y `body.desktop`
  * y `body.mobile` sí se pueden usar porque Logto las escribe sin hashear (ver `register.scss`).
+ *
+ * ═══════════════════════════════════════════════════════════════════════════════════════════════
+ * F5 · EL CENTRADO
+ * ═══════════════════════════════════════════════════════════════════════════════════════════════
+ *
+ * ## El criterio, en una frase
+ *
+ * **La tarjeta se centra en la ventana; dentro de la tarjeta, las dos columnas se centran sobre la
+ * MISMA línea.** Ni una columna centrada y la otra arriba, ni dos criterios distintos según la
+ * plataforma. Con la salvedad de siempre: si el contenido es más alto que la ventana, no se recorta
+ * por arriba — el centrado se apaga solo, porque el hueco sobrante deja de existir (ver más abajo).
+ *
+ * Se eligió «ambas centradas» y no «ambas desde arriba» porque la columna del código es un cartel
+ * cerrado —título, nota, código, reloj, número, estado— de altura casi fija, y el formulario crece
+ * y encoge con lo que la consola encienda. Anclar los dos arriba dejaría el pie de la columna
+ * colgando en el vacío en cuanto el formulario fuera largo; centrar los dos reparte el aire igual a
+ * los dos lados y aguanta cualquier altura de formulario.
+ *
+ * La maqueta (`registro-ui`) centra el aside y NO centra el main, y allí se ve bien porque las dos
+ * alturas están equilibradas: su `.splitMain` llena la tarjeta. Aquí no lo están —lo que llena la
+ * tarjeta depende de los métodos de acceso que la consola tenga encendidos—, así que el criterio de
+ * la maqueta no se puede copiar tal cual: se copia su intención.
+ *
+ * ## Las tres causas que se arreglan aquí
+ *
+ * **(a) `body.mobile` y `min-width: 820px` miden cosas distintas.** `body.<plataforma>` la escribe
+ * el servidor mirando el user-agent; la media query mide la ventana. Coinciden casi siempre y se
+ * separan en un sitio muy concreto: **una tableta, o un teléfono en horizontal, con la ventana por
+ * encima de 820 px**. Ahí la columna se enciende (media query) mientras `body.mobile .main` sigue
+ * diciendo `flex: 1; align-self: stretch`, o sea «esta tarjeta ES la pantalla». Resultado medido en
+ * 1024×700 con user-agent móvil: la tarjeta ocupa los 700 px de alto, se queda pegada al borde
+ * izquierdo con 164 px muertos a la derecha, la columna del código se centra en esos 700 px
+ * (`inset: 0` + `justify-content: center`) y el formulario se queda arriba, porque
+ * `FirstScreenLayout` **sólo pinta sus dos rellenos flexibles cuando `platform === 'web'`**. Es
+ * exactamente la captura del dueño. Se arregla devolviéndole a la tarjeta su forma de tarjeta
+ * cuando hay dos columnas: si la ventana da para dos columnas, da para una tarjeta.
+ *
+ * **(b) El formulario y el código no se centran igual.** En escritorio los dos rellenos de
+ * `FirstScreenLayout` son `flex: 3` arriba y `flex: 5` abajo — el centro óptico de Logto, pensado
+ * para UNA columna—, así que el contenido del formulario cae al 37,5 % del hueco sobrante mientras
+ * la columna del código cae al 50 %. Con esta configuración el hueco sobrante son 5 px y el desvío
+ * 2, invisible; con un inquilino que apague la passkey y los conectores el hueco pasa de 240 px y el
+ * desvío de 30. Es el mismo defecto, y sólo se nota «en ciertas proporciones» porque el hueco
+ * sobrante depende de lo alto que sea el formulario. Se iguala a `flex: 1` y `flex: 1`.
+ *
+ * **(c) El relleno de la tarjeta era asimétrico** (`30px` arriba, `26px` abajo). La columna del
+ * código va en posición absoluta y su caja contenedora es la **caja de relleno** de la tarjeta, así
+ * que se centra sobre el centro real; el formulario vive en la caja de contenido y se centraría 2 px
+ * más abajo. Los 56 px totales se reparten ahora a partes iguales: la tarjeta mide exactamente lo
+ * mismo y los dos centros coinciden al píxel.
+ *
+ * ## Por qué esto no puede recortar por arriba
+ *
+ * El centrado se hace repartiendo **hueco sobrante** con `flex`, nunca con `justify-content: center`
+ * sobre una caja de altura fija ni con márgenes negativos. Cuando el contenido es más alto que la
+ * ventana no hay hueco sobrante que repartir: los dos rellenos flexibles se quedan en 0, la tarjeta
+ * crece, `.container` crece con ella (tiene `min-height: 100%`, no `height`) y el `.viewBox` de
+ * Logto —`position: absolute; inset: 0; overflow: auto`— desplaza. Nada se corta por arriba porque
+ * arriba no hay nada que empuje. Comprobado a 1280×420, donde la tarjeta no cabe.
  */
 
 /* stylelint-disable selector-class-pattern -- las clases globales de Logto llevan guion
    (`logto_main-content`); renombrarlas no está en nuestra mano. */
 
 @supports selector(:has(*)) {
+  /* ── El contenido, centrado dentro de la tarjeta ────────────────────────────────────────────
+     A CUALQUIER ancho, también por debajo de 820 px: en móvil vertical la tarjeta ocupa la
+     pantalla entera y el formulario se quedaba arriba con el 40 % de abajo vacío.
+
+     `.logto_main-content` es una caja en columna (`_.flex_column`, que en esta casa trae
+     `justify-content: center` de serie). Sus hijos directos son, en escritorio, los dos rellenos
+     flexibles de `FirstScreenLayout` y la caja del contenido en medio; en móvil, sólo la caja del
+     contenido. Con esta pareja de reglas el reparto es el mismo en los dos casos:
+
+       · todo hijo directo reparte hueco sobrante a partes iguales   → `flex: 1`
+       · MENOS la caja que lleva la columna dentro, que mide lo suyo → `flex: none`
+
+     La segunda gana por especificidad (`div:has(> .te_signin-aside)` = 0,1,1 contra `div` = 0,0,1),
+     no por orden. Y se identifica por lo que contiene y no por su posición: si algún día
+     `FirstScreenLayout` cambia el número de rellenos, esto sigue diciendo lo mismo.
+
+     En móvil no hay rellenos que igualar, y entonces quien centra es el `justify-content: center`
+     que la tarjeta ya traía: en cuanto la caja del contenido deja de estirarse (`flex: none`),
+     centra. Un solo mecanismo para las dos plataformas. */
+  body.desktop .logto_main-content:has(.te_signin-aside) > div,
+  body.mobile .logto_main-content:has(.te_signin-aside) > div {
+    flex: 1;
+  }
+
+  body.desktop .logto_main-content:has(.te_signin-aside) > div:has(> .te_signin-aside),
+  body.mobile .logto_main-content:has(.te_signin-aside) > div:has(> .te_signin-aside) {
+    flex: none;
+  }
+
   @media (min-width: 820px) {
     /*
      * 860 px es el ancho de la maqueta: 340 de columna + 520 de formulario. `max-width: 100%`
@@ -62,8 +155,48 @@
        * columna derecha sin tocar ni una línea de su estructura.
        *
        * 368 = 340 de columna + 28 de aire, que son los mismos 28 del otro lado.
+       *
+       * Arriba y abajo, 28 y 28: los mismos 56 px de antes, pero repartidos igual. Ver la causa
+       * (c) de la cabecera — con 30/26 el formulario se centraba 2 px por debajo de la columna.
        */
-      padding: 30px 28px 26px 368px;
+      padding: 28px 28px 28px 368px;
+
+      /*
+       * Y aquí la causa (a). Con user-agent móvil, `body.mobile .main` trae
+       * `flex: 1; align-self: stretch; background: var(--color-bg-body)` y ningún redondeo: la
+       * tarjeta ES la pantalla. Eso es lo correcto en un teléfono en vertical, donde no hay
+       * columna; con dos columnas encendidas deja la tarjeta pegada al borde izquierdo y estirada
+       * a lo alto de la ventana.
+       *
+       * Si la ventana da para dos columnas, da para una tarjeta: se le devuelve el tamaño propio
+       * (`flex: none`), el centrado horizontal (`align-self: center`, que además desactiva el
+       * `stretch`) y la forma de tarjeta. Los valores son LOS MISMOS que `body.desktop .main` ya
+       * usa, no unos nuevos: 540 de alto mínimo, 16 de radio, `--color-bg-float` y
+       * `--color-shadow-2`. En `body.desktop` esta parte no cambia nada y se deja escrita para las
+       * dos plataformas por lo mismo de siempre: hace falta el `body.<plataforma>` delante para
+       * ganar la especificidad, y dos reglas que dicen lo mismo son mejor que una que dice cosas
+       * distintas según quién la lea.
+       */
+      flex: none;
+      align-self: center;
+      min-height: 540px;
+      border-radius: 16px;
+      background: var(--color-bg-float);
+      box-shadow: var(--color-shadow-2);
+    }
+
+    /*
+     * El lienzo que rodea a la tarjeta. `body.desktop .container` ya trae `padding: _.unit(5)`;
+     * `body.mobile .container` no trae ninguno —no le hacía falta, la tarjeta ocupaba la
+     * pantalla—, así que sin esto la tarjeta recién despegada tocaría los cuatro bordes.
+     *
+     * La segunda línea no es un duplicado: la primera pisa el `padding-bottom:
+     * env(safe-area-inset-bottom)` que Logto pone en móvil, y `max()` devuelve el mayor de los dos
+     * en vez de elegir. En un navegador sin `env()` el valor es 0 y queda el 20 de siempre.
+     */
+    body.mobile .logto_page-container:has(.te_signin-aside) {
+      padding: 20px;
+      padding-bottom: max(20px, env(safe-area-inset-bottom));
     }
   }
 }
