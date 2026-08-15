@@ -391,6 +391,108 @@ body.desktop .te-flow-register div[class*='wrapper'] > div[class*='container'] {
   border-radius: 6px;
 }
 
+/* ── Móvil: la hoja ES la pantalla ────────────────────────────────────────
+ *
+ * Todo lo de este bloque cuelga de `body.mobile`, la clase que Logto escribe sin
+ * hashear —la misma que ya usa `body.desktop` más arriba—. El escritorio y la
+ * tablet no ven ni una de estas reglas: el rediseño del alta ya está validado
+ * allí y no se toca.
+ *
+ * El objetivo es que dentro de la hoja de `ASWebAuthenticationSession` esto no se
+ * lea como «una web metida en un cajón». La hoja ya pone el marco —barra con el
+ * dominio, esquinas redondeadas—, así que la página no debe poner otro: dos
+ * marcos concéntricos es justo lo que delata que dentro hay un navegador.
+ *
+ * Nada de esto oculta elementos ni cablea textos. Son medidas y tipografía sobre
+ * las clases que Logto ya pinta, así que lo que la consola active o desactive
+ * mañana sigue apareciendo o desapareciendo igual.
+ */
+
+body.mobile .te-flow-register {
+  /* Una sola superficie. En móvil no hay tarjeta que despegar del lienzo, así que
+     el degradado lavanda solo conseguía dibujar una costura donde no hay borde:
+     el contenido es blanco y el fondo no. Con el lienzo igual al cuerpo, la
+     página y la hoja son la misma cosa. */
+  --te-ground: var(--color-bg-body);
+  --te-ground-glow: var(--color-bg-body);
+
+  /* La escala sube. En la mano, el título es lo único que se lee antes de decidir
+     si esto es de fiar, y a 27px competía con el cuerpo de texto. */
+  --font-headline-1: 680 31px/37px var(--te-font-family);
+  --font-headline-2: 680 31px/37px var(--te-font-family);
+
+  --te-radius-control: 14px;
+
+  background: var(--color-bg-body);
+}
+
+/* Ancho completo, con el safe-area respetado.
+ *
+ * 16px es el margen mínimo del sistema. `max()` y no una suma: en un teléfono sin
+ * inserciones laterales no deja 16px + 0, y en uno con ellas no encadena dos
+ * márgenes. En vertical no hace falta — de la zona del notch se ocupa la hoja. */
+body.mobile .te-flow-register .logto_page-container {
+  justify-content: flex-start;
+  padding-inline: max(16px, env(safe-area-inset-left))
+    max(16px, env(safe-area-inset-right));
+}
+
+body.mobile .te-flow-register .logto_main-content {
+  width: 100%;
+  max-width: none;
+  /* Sin sombra, sin radio y sin padding lateral propio: en móvil la tarjeta sobra
+     porque la hoja ya es la tarjeta. Se anulan explícitamente por si upstream las
+     reintroduce en una actualización. */
+  padding-inline: 0;
+  padding-bottom: max(16px, env(safe-area-inset-bottom));
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* El logotipo, con presencia real.
+ *
+ * En escritorio se contiene a 32px para que la marca no pese más que la acción.
+ * En móvil el problema es el contrario: a 32px, dentro de una hoja que ya lleva
+ * el dominio escrito arriba, el logo se lee como un adorno y la pantalla pierde
+ * su ancla de identidad. A 52px vuelve a ser un icono de producto —el papel que
+ * hace en la pantalla de acceso de Google— sin robarle el sitio al título. */
+body.mobile .te-flow-register .logto_branding-header img {
+  max-height: 52px;
+}
+
+/* El hueco entre el título y la descripción, medido en el navegador: eran 44px
+   —28px de `padding-bottom` que pone Logto en el contenedor de la cabecera, más
+   20px de margen nuestro, menos 4px que la descripción se sube ella sola—. Con un
+   título de 31px eso abre un vacío que rompe la lectura justo donde la mirada
+   viene lanzada, y el resultado se lee como dos pantallas pegadas en vez de una.
+   Se anula el padding de Logto y el margen queda como único responsable, para que
+   la separación esté escrita en un sitio y no repartida en tres. */
+body.mobile .te-flow-register .logto_branding-header {
+  margin-bottom: 20px;
+  padding-bottom: 0;
+}
+
+/* Campo y botón, a altura de sistema: 52px es el alto de una fila de ajustes de
+   iOS; 46px se lee como un control de formulario web. */
+body.mobile .te-flow-register .logto_main-content input:not([class*='code']) {
+  height: 52px;
+  font-size: 17px;
+}
+
+body.mobile
+  .te-flow-register
+  .logto_main-content
+  button[class*='button'][class*='primary'] {
+  height: 52px;
+  font-size: 17px;
+}
+
+/* Con controles de 52px, 18px de separación se quedaba apretado y el formulario
+   volvía a leerse como una lista web. */
+body.mobile .te-flow-register form {
+  gap: 20px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .te-flow-register .logto_main-content button[class*='button'] {
     transition: none;
