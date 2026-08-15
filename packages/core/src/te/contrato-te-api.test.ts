@@ -76,12 +76,48 @@ describe('el sondeo llega envuelto', () => {
     expect(marco).toEqual({ t: 'code', code: codigo });
   });
 
+  /**
+   * El push comparte la envoltura y añade una cosa: **a dónde fue el aviso**.
+   *
+   * Por eso `estadoPush` devuelve `{frame, despacho}` y no el marco pelado — el marco dice en qué
+   * punto está el reto, y la etiqueta dice a qué dispositivo salió. Este test se escribió cuando
+   * sólo existía lo primero y se quedó comprobando el marco desnudo: seguía compilando, porque lo
+   * que cambió es la forma del valor devuelto y no la del cuerpo del cable.
+   *
+   * `dispatch` llega `null` hasta que el trabajador de fondo de te-api resuelve el identificador
+   * —fuera del ciclo de petición, para que la latencia no diga si la cuenta existe (PU-4)—, así que
+   * el caso «todavía no se sabe» es el normal en los primeros sondeos y no un error.
+   */
   it('lo mismo para el push, que comparte la envoltura', async () => {
-    fetchSimulado.mockResolvedValue(respuestaJson({ frame: { t: 'approved' }, retryAfterMs: 0 }));
+    fetchSimulado.mockResolvedValue(
+      respuestaJson({ frame: { t: 'approved' }, retryAfterMs: 0, dispatch: null })
+    );
 
-    const marco = await new TeApiClient(config).estadoPush('reto-1', 'txn-1');
+    const estado = await new TeApiClient(config).estadoPush('reto-1', 'txn-1');
 
-    expect(marco).toEqual({ t: 'approved' });
+    expect(estado).toEqual({ frame: { t: 'approved' } });
+  });
+
+  it('y cuando te-api ya ha despachado, la etiqueta sale con el marco', async () => {
+    fetchSimulado.mockResolvedValue(
+      respuestaJson({
+        frame: { t: 'claimed' },
+        retryAfterMs: 700,
+        dispatch: { count: 1, kind: 'phone', lastSeen: 'today' },
+      })
+    );
+
+    const estado = await new TeApiClient(config).estadoPush('reto-1', 'txn-1');
+
+    /*
+     * Sale **tal cual llegó**: quien recorta es la ruta, con `enmascararDespacho`, en el mismo
+     * sitio donde se escribe `ctx.body`. Comprobarlo aquí es lo que impide que alguien «arregle»
+     * el recorte en el cliente y deje la frontera hacia el navegador en dos sitios distintos.
+     */
+    expect(estado).toEqual({
+      frame: { t: 'claimed' },
+      despacho: { count: 1, kind: 'phone', lastSeen: 'today' },
+    });
   });
 
   /**
