@@ -11,6 +11,7 @@ import useSendVerificationCode from '@/hooks/use-send-verification-code';
 import { useSieMethods } from '@/hooks/use-sie';
 import useStartIdentifierPasskeySignInProcessing from '@/hooks/use-start-identifier-passkey-sign-in-processing';
 import useToast from '@/hooks/use-toast';
+import useTeAvailability from '@/te/channel/use-te-availability'; // LOGTO PATCH(te-factor-choice)
 import { UserFlow } from '@/types';
 
 const useOnSubmit = (signInMethods: SignIn['methods']) => {
@@ -24,6 +25,8 @@ const useOnSubmit = (signInMethods: SignIn['methods']) => {
     useStartIdentifierPasskeySignInProcessing({
       hideErrorToast: true,
     });
+  // LOGTO PATCH(te-factor-choice)
+  const { hayQr: hayQrTe, hayPush: hayPushTe } = useTeAvailability();
 
   const navigateToPasswordPage = useCallback(() => {
     navigate({
@@ -56,6 +59,33 @@ const useOnSubmit = (signInMethods: SignIn['methods']) => {
         if (result) {
           return;
         }
+      }
+
+      /*
+       * LOGTO PATCH(te-factor-choice): C2 · con TripleEnable disponible, esto deja de ser un
+       * camino único y pasa a ser una elección, así que se lleva a la pantalla de métodos, donde
+       * conviven las tarjetas nativas (passkey, contraseña, código) y las dos de TripleEnable.
+       *
+       * ## Por qué exactamente aquí
+       *
+       * Después del bloque de SSO y antes del de passkey. SSO gana siempre —si el dominio tiene
+       * conector, no hay elección que ofrecer— y passkey no debe dispararse si vamos a ofrecer
+       * elección: esa llamada es la que ya filtra el único bit que la pantalla del identificador
+       * filtra hoy, y hacerla para nada sería regalarlo sin necesidad.
+       *
+       * ## Lo que NO hay aquí
+       *
+       * Ninguna consulta al directorio. No se pregunta si este identificador tiene cartera
+       * vinculada: eso sería un oráculo de existencia. Las tarjetas se pintan por configuración,
+       * igual que las de contraseña y código. El coste —que quien no tenga cartera pueda elegir
+       * un método que acabará en el mensaje uniforme— está argumentado en `TeMethodCards`.
+       *
+       * Upstream: del bloque SSO se pasaba directamente al de passkey.
+       */
+      if (hayQrTe || hayPushTe) {
+        navigate({ pathname: `/${UserFlow.SignIn}/verification-methods` });
+
+        return;
       }
 
       // Try passkey sign-in first if enabled
@@ -106,6 +136,9 @@ const useOnSubmit = (signInMethods: SignIn['methods']) => {
       signInMethods,
       setIdentifierInputValue,
       ssoConnectors.length,
+      hayQrTe, // LOGTO PATCH(te-factor-choice)
+      hayPushTe, // LOGTO PATCH(te-factor-choice)
+      navigate, // LOGTO PATCH(te-factor-choice)
       passkeySignIn?.enabled,
       checkSingleSignOn,
       startIdentifierPasskeySignInProcessing,

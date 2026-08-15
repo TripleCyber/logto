@@ -17,6 +17,7 @@ import TermsAndPrivacyLinks from '@/containers/TermsAndPrivacyLinks';
 import useNavigateWithPreservedSearchParams from '@/hooks/use-navigate-with-preserved-search-params';
 import { useSieMethods } from '@/hooks/use-sie';
 import useTerms from '@/hooks/use-terms';
+import TeQrInline from '@/te/channel/TeQrInline'; // LOGTO PATCH(te-qr-desktop)
 
 import ErrorPage from '../ErrorPage';
 
@@ -129,6 +130,16 @@ const SignIn = () => {
       <WebAuthnContextProvider>
         <SingleSignOnFormModeContextProvider>
           <Main signInMethods={signInMethods} socialConnectors={socialConnectors} />
+          {/*
+            LOGTO PATCH(te-qr-desktop): C1 · el QR de TripleEnable, pintado directamente en esta
+            pantalla y **sólo en escritorio**. El propio componente decide: si la plataforma es
+            móvil, o el conector está apagado en la consola, o te-api no responde, no pinta nada.
+            Va entre el formulario y el pie para que se lea como una alternativa al formulario de
+            arriba y no como parte de la lista social de abajo.
+
+            Upstream: `<Main/>` y `<SignInFooters/>` sin nada en medio.
+          */}
+          <TeQrInline />
           <SignInFooters />
         </SingleSignOnFormModeContextProvider>
       </WebAuthnContextProvider>

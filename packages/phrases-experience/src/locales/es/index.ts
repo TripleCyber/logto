@@ -13,6 +13,8 @@ import mfa from './mfa.js';
 import passkey_sign_in from './passkey-sign-in.js';
 import profile from './profile.js';
 import secondary from './secondary.js';
+// LOGTO PATCH(te-factor-choice)
+import te from './te.js';
 import user_scopes from './user-scopes.js';
 
 const es = {
@@ -29,6 +31,7 @@ const es = {
     profile,
     account_center,
     passkey_sign_in,
+    te, // LOGTO PATCH(te-factor-choice)
   },
 } satisfies DeepPartial<LocalePhrase>;
 

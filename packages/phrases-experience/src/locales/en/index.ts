@@ -9,6 +9,9 @@ import mfa from './mfa.js';
 import passkey_sign_in from './passkey-sign-in.js';
 import profile from './profile.js';
 import secondary from './secondary.js';
+// LOGTO PATCH(te-factor-choice): copy for the TripleEnable factors. It is a new group, so no
+// upstream key changes meaning and a rebase can only ever conflict on these two lines.
+import te from './te.js';
 import user_scopes from './user-scopes.js';
 
 const en = {
@@ -25,6 +28,7 @@ const en = {
     profile,
     account_center,
     passkey_sign_in,
+    te, // LOGTO PATCH(te-factor-choice)
   },
 };
 

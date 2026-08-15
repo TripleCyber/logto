@@ -54,6 +54,9 @@ import SocialSignInWebCallback from './pages/SocialSignInWebCallback';
 import Springboard from './pages/Springboard';
 import SwitchAccount from './pages/SwitchAccount';
 import VerificationCode from './pages/VerificationCode';
+/* LOGTO PATCH(te-qr-desktop) + LOGTO PATCH(te-factor-choice): pantallas propias del canal. */
+import TePushPage from './te/channel/TePushPage';
+import TeQrPage from './te/channel/TeQrPage';
 import { UserMfaFlow } from './types';
 import 'overlayscrollbars/overlayscrollbars.css';
 import './shared/scss/normalized.scss';
@@ -131,6 +134,20 @@ const App = () => {
                           path="verification-methods"
                           element={<SignInVerificationMethods />}
                         />
+                        {/*
+                          LOGTO PATCH(te-qr-desktop) + LOGTO PATCH(te-factor-choice): las dos
+                          pantallas de factor de TripleEnable, hermanas de `passkey`. Dentro de
+                          `AppLayout` y bajo `/sign-in`, así que heredan el marco, el tema y el
+                          idioma: en ningún momento se sale de Logto — ni redirección, ni popup,
+                          ni iframe. Cada pantalla comprueba por su cuenta que el canal esté
+                          encendido, así que escribir la URL a mano con el conector apagado no
+                          lleva a ninguna parte.
+
+                          Upstream: bajo `sign-in` sólo colgaban `password`, `passkey` y
+                          `verification-methods`.
+                        */}
+                        <Route path="te-qr" element={<TeQrPage />} />
+                        <Route path="te-push" element={<TePushPage />} />
                       </Route>
 
                       {/* Create passkey for sign-in */}
