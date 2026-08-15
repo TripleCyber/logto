@@ -17,10 +17,19 @@ import {
   type RetoPush,
 } from './api';
 import { desfase, restanteMs } from './clock';
-import { ritmoSinRedMs, techoSesionMs } from './config';
-import { analizarMarco, aplicar, esTerminal, estadoInicial, type EstadoCanal } from './machine';
+import { ritmoInicialMs, ritmoSinRedMs, techoSesionMs } from './config';
+import {
+  analizarMarco,
+  aplicar,
+  esTerminal,
+  estadoInicial,
+  type CodigoCanal,
+  type EstadoCanal,
+  type NombreEstado,
+} from './machine';
 import { comoTexto, numeroDeEmparejamiento } from './pairing';
 import useIsMounted from './use-is-mounted';
+import useRotacion from './use-rotacion';
 import { crearLigadura, type LigaduraCanal } from './verifier';
 
 /**
@@ -61,31 +70,24 @@ type Opciones = {
   readonly canal: 'qr' | 'push';
 };
 
-const faseDesdeEstado = (estado: EstadoCanal): FaseCanal => {
-  switch (estado.nombre) {
-    case 'inicio': {
-      return 'abriendo';
-    }
-    case 'esperando': {
-      return 'esperando';
-    }
-    case 'escaneado': {
-      return 'escaneado';
-    }
-    case 'aprobado': {
-      return 'aprobado';
-    }
-    case 'rechazado': {
-      return 'rechazado';
-    }
-    case 'caducado': {
-      return 'caducado';
-    }
-    default: {
-      return 'fallo';
-    }
-  }
-};
+/**
+ * De estado de la máquina a fase de pantalla, en tabla y no en `switch`.
+ *
+ * Es la misma forma que usa `TeStatus` para sus textos, y por el mismo motivo: una tabla se lee de
+ * un vistazo y el compilador exige que estén los siete estados, así que añadir uno a la máquina y
+ * olvidarse de la pantalla deja de compilar en vez de caer en un `default`.
+ */
+const fases: Readonly<Record<NombreEstado, FaseCanal>> = Object.freeze({
+  inicio: 'abriendo',
+  esperando: 'esperando',
+  escaneado: 'escaneado',
+  aprobado: 'aprobado',
+  rechazado: 'rechazado',
+  caducado: 'caducado',
+  fallo: 'fallo',
+});
+
+const faseDesdeEstado = (estado: EstadoCanal): FaseCanal => fases[estado.nombre];
 
 const useTeChannel = ({ canal }: Opciones) => {
   const [estado, setEstado] = useState<EstadoCanal>(estadoInicial);
@@ -203,6 +205,36 @@ const useTeChannel = ({ canal }: Opciones) => {
   }, [asyncIdentifyAndSubmit, estaMontado, handleError, redirectTo, submitErrorHandler]);
 
   /**
+   * Mete un código recién acuñado en la máquina.
+   *
+   * Lo llama `useRotacion`, que es quien decide **cuándo** hay que pedirlo. La máquina sigue
+   * mandando: un `seq` que no avanza es un reenvío y `aplicar` devuelve el mismo objeto, así que
+   * la identidad basta para saber si hay algo que repintar.
+   */
+  const aplicarCodigo = useCallback(
+    (codigo: CodigoCanal) => {
+      const siguiente = aplicar(estadoRef.current, { t: 'code', code: codigo });
+
+      if (siguiente !== estadoRef.current) {
+        fijarEstado(siguiente);
+        setFase(faseDesdeEstado(siguiente));
+      }
+    },
+    [fijarEstado]
+  );
+
+  /** Ver `use-rotacion.ts`: quien rota el código es la pantalla, y aquí está el porqué entero. */
+  const rotar = useRotacion({
+    canal,
+    estado,
+    estadoRef,
+    ligadura,
+    correccionReloj,
+    estaMontado,
+    aplicarCodigo,
+  });
+
+  /**
    * Una vuelta del sondeo. Devuelve los milisegundos hasta la siguiente, o `undefined` para parar.
    */
   const unaVuelta = useCallback(async (): Promise<number | undefined> => {
@@ -316,6 +348,28 @@ const useTeChannel = ({ canal }: Opciones) => {
         // Un 4xx del canal es el error uniforme: el canal ya no sirve y no hay nada que
         // reintentar. Un fallo sin respuesta es la red, y de eso sí se vuelve.
         if (error instanceof HTTPError) {
+          /*
+           * Antes de rendirse, una oportunidad: **el canal puede haberse quedado sin código sin
+           * haberse muerto**. Los temporizadores de una pestaña en segundo plano se frenan a uno
+           * por minuto, así que la rotación llega tarde, el código caduca del todo y el sondeo se
+           * encuentra con una sesión viva de la que no se puede derivar ningún marco. Al volver a
+           * la pestaña eso se veía como «este código no está listo» sin que nadie hubiera tocado
+           * nada.
+           *
+           * Acuñar otro código es exactamente lo que falta, y la sesión —que dura mucho más que
+           * un código— sigue siendo la misma. Si tampoco se puede acuñar, entonces sí: el canal
+           * está muerto y se dice.
+           */
+          const revivido = await rotar();
+
+          if (revivido && estaMontado()) {
+            setTimeout(() => {
+              void vuelta();
+            }, ritmoInicialMs);
+
+            return;
+          }
+
           setFase('fallo');
           // eslint-disable-next-line @silverhand/fp/no-mutation
           sondeando.current = false;
@@ -331,7 +385,7 @@ const useTeChannel = ({ canal }: Opciones) => {
     };
 
     void vuelta();
-  }, [estaMontado, unaVuelta]);
+  }, [estaMontado, rotar, unaVuelta]);
 
   /** Abre el canal QR: liga la pestaña, pinta el primer código y deriva el emparejamiento. */
   const abrirQr = useCallback(async () => {
@@ -376,17 +430,22 @@ const useTeChannel = ({ canal }: Opciones) => {
   }, [arrancarSondeo, estaMontado, fijarEstado]);
 
   /**
-   * Abre el canal push y despacha. Sin `deviceRef` va al dispositivo elegible más reciente y no se
-   * enseña ninguna lista: cero información antes de que nadie demuestre nada.
+   * El tramo común de push: despacha el reto, fija el techo de sesión y arranca el sondeo.
+   *
+   * Abrir y reintentar sólo se diferencian en si hay que abrir canal antes —de ahí `antes`—, y
+   * tenerlo escrito dos veces ya había costado que una corrección entrara en una copia y no en la
+   * otra. Lo que se comparte es exactamente lo que tiene que comportarse igual: el mismo techo, el
+   * mismo arranque del sondeo y el mismo reparto entre «el servidor dijo que no» y «no hubo
+   * servidor».
    */
-  const abrirPush = useCallback(
-    async (loginHint: string, deviceRef?: string) => {
+  const despacharYEsperar = useCallback(
+    async (deviceRef?: string, antes?: () => Promise<void>) => {
       setFase('abriendo');
       fijarEstado(estadoInicial);
-      setReto(undefined);
 
       try {
-        await abrirCanalPush(loginHint);
+        await antes?.();
+
         const nuevoReto = await despacharPush(deviceRef);
 
         if (!estaMontado()) {
@@ -409,33 +468,25 @@ const useTeChannel = ({ canal }: Opciones) => {
     [arrancarSondeo, estaMontado, fijarEstado]
   );
 
+  /**
+   * Abre el canal push y despacha. Sin `deviceRef` va al dispositivo elegible más reciente y no se
+   * enseña ninguna lista: cero información antes de que nadie demuestre nada.
+   */
+  const abrirPush = useCallback(
+    async (loginHint: string, deviceRef?: string) => {
+      setReto(undefined);
+
+      return despacharYEsperar(deviceRef, async () => {
+        await abrirCanalPush(loginHint);
+      });
+    },
+    [despacharYEsperar]
+  );
+
   /** Vuelve a despachar sobre el canal ya abierto, a otro dispositivo o al mismo. */
   const reintentarPush = useCallback(
-    async (deviceRef?: string) => {
-      setFase('abriendo');
-      fijarEstado(estadoInicial);
-
-      try {
-        const nuevoReto = await despacharPush(deviceRef);
-
-        if (!estaMontado()) {
-          return;
-        }
-
-        setReto(nuevoReto);
-        fijarEstado({ nombre: 'esperando', seq: 0 });
-        setFase('esperando');
-        // eslint-disable-next-line @silverhand/fp/no-mutation
-        finDeSesion.current = Date.now() + restanteMs(nuevoReto.expiresAt, Date.now());
-
-        arrancarSondeo();
-      } catch (error: unknown) {
-        if (estaMontado()) {
-          setFase(error instanceof HTTPError ? 'fallo' : 'sinRed');
-        }
-      }
-    },
-    [arrancarSondeo, estaMontado, fijarEstado]
+    async (deviceRef?: string) => despacharYEsperar(deviceRef),
+    [despacharYEsperar]
   );
 
   const { codigo } = estado;

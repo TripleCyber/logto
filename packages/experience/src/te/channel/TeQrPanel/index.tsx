@@ -1,3 +1,4 @@
+import classNames from 'classnames';
 import { type CSSProperties, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -78,7 +79,9 @@ const TeQrPanel = ({ hasSalida = true }: Props) => {
   return (
     <div className={styles.contenedor} style={conLado(lado)}>
       {!terminado && (
-        <div className={styles.marco}>
+        // El blanco es para el código: sin código —abriendo el canal, o ya reclamado— el marco se
+        // apaga y deja el contorno. Ver la hoja: una lámina blanca vacía parece algo roto.
+        <div className={classNames(styles.marco, !codigo && styles.marcoApagado)}>
           {codigo ? (
             <TeQrCanvas lado={lado} uri={codigo.uri} />
           ) : (

@@ -38,7 +38,7 @@ const conLado = (lado: number): CSSProperties =>
  * no cumplirse.
  */
 const Marcador = () => (
-  <div className={styles.marco}>
+  <div className={classNames(styles.marco, styles.marcoApagado)}>
     <div className={styles.marcoVacio}>
       <LoadingIcon />
     </div>
@@ -80,11 +80,12 @@ const TeSignInAsideCanal = () => {
    */
   const terminado = fase === 'rechazado' || fase === 'caducado' || fase === 'fallo';
   const rotando = fase === 'abriendo' || fase === 'esperando';
+  const hayCodigo = Boolean(codigo) && !terminado;
 
   return (
     <>
-      <div className={styles.marco}>
-        {codigo && !terminado ? (
+      <div className={classNames(styles.marco, !hayCodigo && styles.marcoApagado)}>
+        {hayCodigo && codigo ? (
           <TeQrCanvas lado={ladoAside} uri={codigo.uri} />
         ) : (
           <div className={styles.marcoVacio}>{terminado ? undefined : <LoadingIcon />}</div>
@@ -115,8 +116,13 @@ const TeSignInAsideCanal = () => {
       )}
 
       <div className={styles.espera}>
-        {/* El punto latiendo dice «esto está vivo» sin gastar una línea de texto. */}
-        {rotando && <i aria-hidden className={styles.pulso} />}
+        {/*
+          El punto latiendo dice «esto está vivo» sin gastar una línea de texto, y por eso late
+          mientras el canal lo esté — también con el código ya reclamado, que es justo cuando la
+          persona está mirando el móvil y volviendo aquí a ver si pasó algo. Sólo se apaga en los
+          terminales, donde ya no queda nada que esperar y lo que hay es un botón.
+        */}
+        {!terminado && <i aria-hidden className={styles.pulso} />}
         <TeStatus canal="qr" fase={fase} hasEscaneo={huboEscaneo} />
       </div>
 

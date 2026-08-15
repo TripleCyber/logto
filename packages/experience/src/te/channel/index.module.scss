@@ -38,6 +38,17 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 6%), 0 12px 32px -16px rgba(0, 0, 0, 24%);
 }
 
+/* El blanco es PARA el código, no para el hueco.
+   Sin nada que leer —mientras se abre el canal, o con el código ya reclamado— esa lámina blanca de
+   doscientos píxeles es lo más ruidoso de la pantalla y encima parece algo que se ha roto. Se
+   apaga y queda el contorno. El contorno va por `box-shadow` interior y no por `border` porque
+   así no ocupa caja: el hueco mide exactamente lo mismo con código y sin él, y nada da un salto
+   al llegar el siguiente. */
+.marcoApagado {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-line-divider);
+}
+
 .lienzo {
   display: block;
   /* El lado sale de `--te-qr-lado`, que fija el panel según la plataforma. UN solo sitio: el
@@ -207,8 +218,11 @@
    es la sombra, que sobre un lienzo oscuro tiene que ser más profunda para
    que el marco no flote. */
 
+/* `:not(.marcoApagado)` no es adorno: esta regla tiene más especificidad que `.marcoApagado`, así
+   que sin la exclusión el marco apagado seguiría proyectando la sombra de una lámina que ya no
+   está — un rectángulo que flota sobre nada. */
 :global(html[data-theme='dark']) {
-  .marco {
+  .marco:not(.marcoApagado) {
     box-shadow: 0 1px 2px rgba(0, 0, 0, 32%), 0 16px 40px -16px rgba(0, 0, 0, 64%);
   }
 }

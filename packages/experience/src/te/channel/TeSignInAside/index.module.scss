@@ -94,6 +94,16 @@
   box-shadow: 0 1px 2px rgba(0, 0, 0, 6%), 0 12px 32px -16px rgba(0, 0, 0, 24%);
 }
 
+/* El blanco es PARA el código, no para el hueco. Mientras se abre el canal, y sobre todo cuando la
+   cartera ya se llevó el código, lo que quedaba era una lámina blanca de casi doscientos píxeles
+   —lo más ruidoso de la columna— con una ruedecita dentro: se leía como algo roto y no como «ya
+   está, termina en el móvil». Se apaga y queda el contorno, con el mismo tamaño exacto: el
+   `box-shadow` interior no ocupa caja, un `border` sí. */
+.marcoApagado {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-line-divider);
+}
+
 .marcoVacio {
   display: grid;
   place-items: center;
@@ -186,8 +196,11 @@
    El marco del código se queda blanco a propósito; lo que cambia es la sombra,
    que sobre un lienzo oscuro tiene que ser más profunda para no flotar. */
 
+/* `:not(.marcoApagado)` no es adorno: esta regla tiene más especificidad que `.marcoApagado`, así
+   que sin la exclusión el marco apagado seguiría proyectando la sombra de una lámina que ya no
+   está — un rectángulo que flota sobre nada. */
 :global(html[data-theme='dark']) {
-  .marco {
+  .marco:not(.marcoApagado) {
     box-shadow: 0 1px 2px rgba(0, 0, 0, 32%), 0 16px 40px -16px rgba(0, 0, 0, 64%);
   }
 }

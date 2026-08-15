@@ -46,5 +46,23 @@ export const ritmoSinRedMs = 4000;
  */
 export const techoSesionMs = 300_000;
 
+/**
+ * Cuánto antes de que el código deje de pintarse se pide el siguiente, en milisegundos.
+ *
+ * **Quien rota es la pantalla, no el servidor.** te-api acuña un código al abrir la sesión y no
+ * vuelve a acuñar ninguno por su cuenta: `POST …/state` deriva el marco de la fila, y cuando la
+ * fila activa ya no existe no hay marco que derivar y la respuesta es un 4xx. Dicho de otro modo,
+ * una pantalla que no rota se queda sin código a los treinta segundos y convierte una espera
+ * normal en un fallo del canal. El propio módulo de rotación de te-api lo da por supuesto al
+ * describir quién compite por el bloqueo: «el temporizador de la pantalla en
+ * `displayExpiresAt − 2 s`».
+ *
+ * Dos segundos, y no cero, porque la petición tarda: pedirlo justo al expirar deja un hueco en el
+ * que el código pintado ya no sirve. Y no más, porque `TE_QR_ROTATE_MIN_SECONDS` (20 s) rechaza
+ * las rotaciones demasiado seguidas: con un código de 30 s, pedir el siguiente antes del segundo
+ * 20 sería pedirlo para nada.
+ */
+export const margenRotacionMs = 2000;
+
 /** Tope de dispositivos que la pantalla pinta. El servidor ya recorta; esto es cinturón. */
 export const topeDispositivos = 5;
