@@ -95,4 +95,15 @@ EXPOSE 3001
 # eso el `&&` de upstream es correcto y no deja el contenedor sin arrancar.
 #
 # Upstream: ENTRYPOINT ["npm", "run"] / CMD ["start"]
+
+# LOGTO PATCH(te-healthcheck): comprobación de salud dentro de la imagen.
+#
+# `/api/status` es el endpoint que el propio Logto expone para esto y responde
+# 204 —un cuerpo vacío que `r.ok` da por bueno—, así que es más barato que sondear
+# el descubrimiento OIDC. Se usa `node` y no `curl`/`wget` porque la base alpine no
+# los trae, pero el runtime sí. El `start-period` es holgado porque el arranque
+# siembra la base antes de servir.
+HEALTHCHECK --interval=15s --timeout=5s --start-period=60s --retries=5 \
+  CMD node -e "fetch('http://127.0.0.1:3001/api/status').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 ENTRYPOINT ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
