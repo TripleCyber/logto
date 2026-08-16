@@ -82,5 +82,17 @@ COPY --from=builder /salida/deps/node_modules ./node_modules
 COPY --from=builder /salida/app/ ./
 RUN mkdir -p /etc/logto/packages/cli/alteration-scripts && chmod g+w /etc/logto/packages/cli/alteration-scripts
 EXPOSE 3001
-ENTRYPOINT ["npm", "run"]
-CMD ["start"]
+
+# LOGTO PATCH(te-seed-on-start): sembrar la base antes de arrancar.
+#
+# La imagen de upstream arranca `npm start` a secas, y contra una base vacía eso
+# es un bucle de reinicio con «relation "systems" does not exist» — el esquema no
+# lo crea nadie. El propio repo lo resuelve en su `docker-compose.yml`, fuera de
+# la imagen; aquí se mete dentro para que la imagen sea autosuficiente y funcione
+# en cualquier plataforma sin que nadie tenga que acordarse.
+#
+# `db seed` es idempotente: sobre una base ya sembrada informa y sale con 0, por
+# eso el `&&` de upstream es correcto y no deja el contenedor sin arrancar.
+#
+# Upstream: ENTRYPOINT ["npm", "run"] / CMD ["start"]
+ENTRYPOINT ["sh", "-c", "npm run cli db seed -- --swe && npm start"]
