@@ -54,6 +54,38 @@ export const transaccionGuard = z.object({
   expiresAt: z.string(),
 });
 
+/**
+ * La aplicación que **originó** el login: la RP, no Logto.
+ *
+ * Sin este campo la cartera enseña «Logto» en la pantalla de aprobación. Logto es la fontanería:
+ * la persona no ha oído hablar de ella y lo que pulsó fue «entrar» en Care Store. El nombre que
+ * te-api tiene a mano es el de `te.oauth_client`, y ahí sólo puede haber un cliente OAuth —el
+ * conector de Logto, sembrado literalmente como `Logto`—, porque el conector se presenta ante
+ * te-api con SU `client_id` y no con el de la RP. Nadie más que este proceso sabe cuál era.
+ *
+ * Todo menos `id` es opcional, y eso **es** el contrato: resolver el nombre y el logo de la
+ * aplicación toca la base de datos, y un fallo ahí no puede tumbar un acceso. Lo peor que pasa es
+ * que te-api caiga a lo de siempre. Ver `resolverAplicacionRp` en `#src/te/route-helpers.ts`.
+ */
+export type AplicacionRp = {
+  /**
+   * `applicationId` de Logto, leído de `ctx.interactionDetails.params.client_id`.
+   *
+   * Es **estado de servidor de oidc-provider**, recuperado de la interacción viva por
+   * `koaInteractionDetails`, no un parámetro que el navegador vuelva a mandar en esta petición.
+   * Esa propiedad es la que sostiene todo lo demás: te-api pinta este nombre en una pantalla de
+   * aprobación, y un nombre elegido por quien ataca sería precisamente el ataque.
+   */
+  id: string;
+  name?: string;
+  /**
+   * El origen que se **enseña**, derivado de los `redirect_uris` registrados de la aplicación.
+   * Registrarlos es un acto de la consola, así que sigue siendo un dato del servidor.
+   */
+  origin?: string;
+  logoUrl?: string;
+};
+
 export const confirmacionGuard = z.object({
   /** URL de retorno con `code` y `state`. **Muere en el servidor de Logto.** */
   redirectTo: z.string(),

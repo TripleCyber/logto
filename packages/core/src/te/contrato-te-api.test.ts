@@ -134,6 +134,12 @@ describe('el sondeo llega envuelto', () => {
 });
 
 describe('el identificador viaja donde te-api lo lee', () => {
+  /**
+   * El `client_id` de dentro de `authorize` es el **del conector de Logto ante te-api**, y no el de
+   * la aplicación que originó el login. Los dos viven en el mismo cuerpo y son espacios de nombres
+   * distintos: confundirlos es literalmente la razón de que la cartera dijera «estás entrando en
+   * Logto». La RP viaja aparte, en `rp`; ver el bloque de abajo.
+   */
   const url = 'https://te.example/oauth/authorize?client_id=logto-te&state=abc&code_challenge=xyz';
 
   it('lo mete en `authorize.login_hint`, nunca como campo hermano', async () => {
@@ -145,6 +151,7 @@ describe('el identificador viaja donde te-api lo lee', () => {
     const autorizacion = cuerpo.authorize as Record<string, string>;
 
     expect(autorizacion.login_hint).toBe('vlad@example.test');
+    // El del conector. Que no se le pegue el de la RP ni al revés.
     expect(autorizacion.client_id).toBe('logto-te');
     // Un campo hermano lo descarta el esquema de te-api en silencio, y el reto push nace señuelo.
     expect(Object.keys(cuerpo).slice().sort()).toEqual(['authorize', 'browser']);
@@ -158,6 +165,50 @@ describe('el identificador viaja donde te-api lo lee', () => {
     expect(Object.keys(cuerpoEnviado(0).authorize as Record<string, unknown>)).not.toContain(
       'login_hint'
     );
+  });
+});
+
+/**
+ * La aplicación que originó el login, en su propia clave de primer nivel.
+ *
+ * Referencia: `src/routes/s2s.ts` de te-api — `cuerpoTransaccion.rp`. Zod descarta lo que no
+ * declara, así que un nombre distinto o un anidamiento distinto no da error: el campo desaparece
+ * en silencio y la cartera vuelve a decir «Logto». Por eso esto se comprueba con el cuerpo del
+ * cable y no con el valor devuelto.
+ */
+describe('la RP viaja como campo hermano', () => {
+  const url = 'https://te.example/oauth/authorize?client_id=logto-te&state=abc&code_challenge=xyz';
+
+  const rp = {
+    id: 'aplicacion-de-care-store',
+    name: 'Care Store',
+    origin: 'https://care.example',
+    logoUrl: 'https://care.example/logo.png',
+  };
+
+  it('la manda en `rp`, fuera de `authorize`, sin tocar el `client_id` del conector', async () => {
+    fetchSimulado.mockResolvedValue(respuestaJson({ txnId: 'txn-1', expiresAt: 'ya' }));
+
+    await new TeApiClient(config).crearTransaccion(url, { ip: '203.0.113.7' }, undefined, rp);
+
+    const cuerpo = cuerpoEnviado(0);
+
+    expect(Object.keys(cuerpo).slice().sort()).toEqual(['authorize', 'browser', 'rp']);
+    expect(cuerpo.rp).toEqual(rp);
+    // Dentro de `authorize` sigue mandando el conector: ahí te-api resuelve `te.oauth_client`.
+    expect((cuerpo.authorize as Record<string, string>).client_id).toBe('logto-te');
+  });
+
+  /**
+   * Omitirla es distinto de mandarla vacía, y te-api se apoya en esa diferencia: sin la clave cae
+   * al nombre de su cliente OAuth, que es el comportamiento de un Logto anterior a este campo.
+   */
+  it('sin RP resuelta no inventa la clave', async () => {
+    fetchSimulado.mockResolvedValue(respuestaJson({ txnId: 'txn-1', expiresAt: 'ya' }));
+
+    await new TeApiClient(config).crearTransaccion(url, { ip: '203.0.113.7' }, 'vlad@example.test');
+
+    expect(Object.keys(cuerpoEnviado(0))).not.toContain('rp');
   });
 });
 

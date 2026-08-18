@@ -120,6 +120,23 @@ mockEsm('#src/te/storage.js', () => ({
   borrarEstadoCanal,
 }));
 
+/**
+ * El catálogo de aplicaciones y el proveedor, para resolver **qué RP** originó el login.
+ *
+ * Son dobles y no un `{}` porque el fallo de esta resolución también es un caso: la ruta tiene que
+ * seguir abriendo el canal aunque la aplicación no se pueda mirar.
+ */
+const findApplicationById = jest.fn<Promise<unknown>, [string]>();
+const safeFindSignInExperienceByApplicationId = jest.fn<Promise<unknown>, [string]>();
+const buscarClienteOidc = jest.fn<Promise<unknown>, [string]>();
+
+/** Care Store tal y como vive en la tabla de aplicaciones. */
+const aplicacionCareStore = {
+  id: 'aplicacion-de-care-store',
+  name: 'Care Store',
+  oidcClientMetadata: { redirectUris: ['https://care.example/callback'] },
+};
+
 const { default: teChannelRoutes } = await import('./te-channel.js');
 
 const prefijo = '/experience/verification/te-channel';
@@ -135,7 +152,10 @@ const registrar = () => {
     router as never,
     {
       libraries: {},
-      queries: {},
+      queries: {
+        applications: { findApplicationById },
+        applicationSignInExperiences: { safeFindSignInExperienceByApplicationId },
+      },
       connectors: {
         getLogtoConnectors: async () => [
           {
@@ -145,7 +165,7 @@ const registrar = () => {
           },
         ],
       },
-      provider: {},
+      provider: { Client: { find: buscarClienteOidc } },
       envSet: { endpoint: new URL('https://logto.test') },
     } as never
   );
@@ -174,10 +194,13 @@ const contexto = ({
   interactionEvent = InteractionEvent.SignIn,
   body,
   verifier,
+  clientId = aplicacionCareStore.id,
 }: {
   interactionEvent?: InteractionEvent;
   body?: unknown;
   verifier?: string;
+  /** Una cadena vacía representa la interacción de la que no se puede sacar ninguna RP. */
+  clientId?: string;
 } = {}) => ({
   experienceInteraction: {
     interactionEvent,
@@ -186,6 +209,12 @@ const contexto = ({
     skipCaptcha: jest.fn(),
     getVerificationRecordByTypeAndId: jest.fn(() => verificacion),
   },
+  /**
+   * Lo que deja `koaInteractionDetails`: el estado de la interacción viva, recuperado del almacén
+   * de oidc-provider. **No es un parámetro que el navegador mande en esta petición**, y de eso
+   * depende que el nombre que sale de aquí se pueda pintar en la pantalla de aprobación.
+   */
+  interactionDetails: { params: { client_id: clientId } },
   verificationAuditLog: { append: jest.fn() },
   request: {
     ip: '203.0.113.9',
@@ -197,6 +226,15 @@ const contexto = ({
 
 const siguiente = nada;
 
+/** El cuarto argumento de `crearTransaccion`: la RP. Sin indexar una tupla declarada vacía. */
+const rpEnviada = () => (cliente.crearTransaccion.mock.calls[0] as unknown[] | undefined)?.[3];
+
+const abrirCanal = async (clientId?: string) =>
+  handler('post', prefijo)(
+    contexto({ body: { channel: 'qr', channelHash: 'h' }, clientId }),
+    siguiente
+  );
+
 beforeEach(() => {
   jest.clearAllMocks();
   configTe.mockReturnValue(configSimulada);
@@ -205,6 +243,12 @@ beforeEach(() => {
   leerEstadoCanal.mockReset();
   assertSocialSignInConnectorEnabled.mockReset();
   cliente.interruptores.mockResolvedValue({ qr: true, push: true });
+  // Los dobles de la RP se reponen enteros: `clearAllMocks` no borra implementaciones, y el
+  // `mockRejectedValue` de un caso de fallo contaminaría los siguientes.
+  findApplicationById.mockReset().mockResolvedValue(aplicacionCareStore);
+  safeFindSignInExperienceByApplicationId.mockReset().mockResolvedValue(null);
+  // Sin implementación devuelve `undefined`, que es justo «el proveedor no conoce ese cliente».
+  buscarClienteOidc.mockReset();
 });
 
 describe('registro de rutas', () => {
@@ -322,7 +366,8 @@ describe('apertura del canal', () => {
     expect(cliente.crearTransaccion).toHaveBeenCalledWith(
       expect.stringContaining('/oauth/authorize?'),
       { ip: '203.0.113.9', userAgent: 'Firefox' },
-      undefined
+      undefined,
+      expect.anything()
     );
   });
 
@@ -367,7 +412,8 @@ describe('apertura del canal', () => {
     expect(cliente.crearTransaccion).toHaveBeenCalledWith(
       expect.any(String),
       expect.any(Object),
-      'ana@example.com'
+      'ana@example.com',
+      expect.anything()
     );
     expect(
       JSON.stringify(ctx.experienceInteraction.setVerificationRecord.mock.calls)
@@ -376,6 +422,52 @@ describe('apertura del canal', () => {
       'ana@example.com'
     );
     expect(ctx.body).toEqual({ verificationId: 'verificacion-1' });
+  });
+});
+
+/**
+ * **Quién pidió entrar de verdad.**
+ *
+ * te-api sólo conoce al conector de Logto —se presenta con SU `client_id`—, así que sin este dato
+ * la cartera enseñaba «Logto»: fontanería que la persona no ha visto nunca, cuando lo que pulsó
+ * fue «entrar» en Care Store.
+ *
+ * Aquí se comprueba el cableado —de dónde sale el identificador y qué llega a te-api— y la
+ * propiedad que lo gobierna: **resolver la aplicación no puede tumbar un acceso**. Es adorno de una
+ * pantalla; el peor resultado admisible es mandar el identificador desnudo y que te-api caiga a lo
+ * de siempre. Los caminos de resolución, uno a uno, están en `te/route-helpers.test.ts`.
+ */
+describe('la aplicación que originó el login viaja hasta te-api', () => {
+  it('la resuelve desde `interactionDetails` y se la pasa a te-api', async () => {
+    await abrirCanal();
+
+    expect(findApplicationById).toHaveBeenCalledWith('aplicacion-de-care-store');
+    expect(rpEnviada()).toEqual({
+      id: 'aplicacion-de-care-store',
+      name: 'Care Store',
+      // Recortado del `redirect_uri` registrado: lo que la persona contrasta es la marca, no una
+      // ruta de callback. Los caminos de resolución se prueban en `te/route-helpers.test.ts`.
+      origin: 'https://care.example',
+    });
+  });
+
+  it('con el catálogo y el proveedor rotos manda el identificador desnudo y abre igual', async () => {
+    findApplicationById.mockRejectedValue(new Error('la base no contesta'));
+    buscarClienteOidc.mockRejectedValue(new Error('tampoco'));
+
+    const ctx = contexto({ body: { channel: 'qr', channelHash: 'h' } });
+    await handler('post', prefijo)(ctx, siguiente);
+
+    expect(rpEnviada()).toEqual({ id: 'aplicacion-de-care-store' });
+    // Y el login sigue: la resolución es adorno de una pantalla, no un control.
+    expect(ctx.body).toMatchObject({ verificationId: 'verificacion-1' });
+  });
+
+  it('sin identificador de aplicación no manda nada, y te-api cae a su cliente OAuth', async () => {
+    await abrirCanal('');
+
+    // Ni siquiera se consulta el catálogo: eso lo fija `te/route-helpers.test.ts`.
+    expect(rpEnviada()).toBeUndefined();
   });
 });
 

@@ -14,6 +14,7 @@ import {
   exigirConfig,
   exigirReto,
   rechazarAlta,
+  resolverAplicacionRp,
   resolverConectorTe,
 } from '#src/te/route-helpers.js';
 import {
@@ -177,12 +178,31 @@ export default function teChannelRoutes<T extends ExperienceInteractionRouterCon
         redirectUri,
       });
 
+      /*
+       * **Quién pidió entrar de verdad.** `client_id` sale de `ctx.interactionDetails`, o sea del
+       * estado que oidc-provider guarda de la interacción viva: lo recupera `koaInteractionDetails`
+       * del almacén del servidor, no lo vuelve a mandar el navegador en esta petición. Esa
+       * propiedad es la que permite pintarlo en una pantalla de aprobación, y es literalmente la
+       * que la migración `1755388800000_te-identidad.ts` de te-api exigía para que la RP pudiera
+       * llegar hasta allí. Si se cambia por algo que el navegador controle —un query, un campo del
+       * cuerpo—, esto deja de poder enseñarse y hay que quitarlo.
+       *
+       * Sin esto, te-api sólo conoce al conector de Logto y la cartera dice «estás entrando en
+       * Logto», que es fontanería que la persona no ha visto nunca: pulsó «entrar» en Care Store.
+       */
+      const rp = await resolverAplicacionRp(
+        ctx.interactionDetails.params.client_id,
+        queries,
+        provider
+      );
+
       // NW-1: la IP del navegador la mide Logto y viaja firmada dentro del HMAC. Sin esto te-api
       // guardaría la IP del centro de datos y la cartera enseñaría un contexto falso.
       const { txnId } = await cliente.crearTransaccion(
         urlAutorizacion,
         { ip: ctx.request.ip, userAgent: ctx.request.headers['user-agent'] },
-        cuerpo.channel === 'push' ? cuerpo.loginHint : undefined
+        cuerpo.channel === 'push' ? cuerpo.loginHint : undefined,
+        rp
       );
 
       const comun = {

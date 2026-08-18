@@ -187,6 +187,11 @@ const contexto = ({
     skipCaptcha: jest.fn(),
     getVerificationRecordByTypeAndId: jest.fn(() => verificacion),
   },
+  /**
+   * Lo que deja `koaInteractionDetails`. Aquí se queda sin `client_id` a propósito: es el camino
+   * por el que la RP no se resuelve, y este fichero comprueba que el canal push abre igual.
+   */
+  interactionDetails: { params: {} },
   verificationAuditLog: { append: jest.fn() },
   request: {
     ip: '203.0.113.9',

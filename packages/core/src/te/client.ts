@@ -13,6 +13,7 @@ import {
   sondeoPushTeApiGuard,
   sondeoTeApiGuard,
   transaccionGuard,
+  type AplicacionRp,
   type DespachoTeApi,
   type InterruptoresCanal,
   type MarcoCanal,
@@ -119,7 +120,8 @@ export class TeApiClient {
   async crearTransaccion(
     urlAutorizacion: string,
     navegador: ContextoNavegador,
-    loginHint?: string
+    loginHint?: string,
+    rp?: AplicacionRp
   ): Promise<{ txnId: string; expiresAt: string }> {
     const { searchParams } = new URL(urlAutorizacion);
 
@@ -141,6 +143,18 @@ export class TeApiClient {
             ...(loginHint === undefined ? {} : { login_hint: loginHint }),
           },
           browser: navegador,
+          /**
+           * La RP sí es un campo hermano, y **tiene** que serlo: dentro de `authorize` te-api la
+           * registraría como parámetro desconocido y la tiraría, porque los de ahí dentro son los
+           * del conector y `client_id` ya está ocupado por el de Logto. Son dos espacios de nombres
+           * distintos —el cliente OAuth de te-api y la aplicación de Logto— y mezclarlos es
+           * exactamente el error que hace que la cartera enseñe «Logto».
+           *
+           * Se omite entera cuando no hay nada que decir, en vez de mandarla vacía: así te-api
+           * distingue «este Logto no sabe de RP» de «esta RP no tiene nombre», y cae a su cliente
+           * OAuth sólo en el primer caso.
+           */
+          ...(rp === undefined ? {} : { rp }),
         },
       },
       transaccionGuard
