@@ -24,6 +24,7 @@ import {
   disableCaptcha,
   enableAllPasswordSignInMethods,
   enableCaptcha,
+  enableSocialSignInConnectorTargets,
 } from '#src/helpers/sign-in-experience.js';
 import { UserApiTest, generateNewUser, generateNewUserProfile } from '#src/helpers/user.js';
 import { generateEmail } from '#src/utils.js';
@@ -156,6 +157,7 @@ describe('captcha', () => {
       await clearConnectorsByTypes([ConnectorType.Social]);
       const { id: socialConnectorId } = await setSocialConnector();
       connectorIdMap.set(mockSocialConnectorId, socialConnectorId);
+      await enableSocialSignInConnectorTargets();
       await updateSignInExperience({
         signUp: {
           identifiers: [],

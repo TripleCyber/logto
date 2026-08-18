@@ -1,0 +1,55 @@
+/* TE:BEGIN account-flow */
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  width: 100%;
+  margin-bottom: 22px;
+}
+
+/* Versalitas y espaciado de letra: el rótulo tiene que leerse como etiqueta de
+   sistema, no como texto que compite con el título. A 11px sin `letter-spacing`
+   parecería un error de tamaño; con él, una decisión. */
+.caption {
+  color: var(--color-type-secondary);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.track {
+  display: flex;
+  gap: 4px;
+  width: 100%;
+  height: 2px;
+}
+
+.segment {
+  flex: 1;
+  border-radius: 999px;
+  background: var(--color-line-divider);
+  /* Se anima el color y no el ancho: con tramos de 2 px, una barra que crece se ve
+     como un parpadeo. Un cambio de color a esta escala se percibe como avance. */
+  transition: background-color 320ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.done {
+  background: var(--color-brand-default);
+}
+
+/* La fase actual se pinta al 50 % de opacidad de marca: distingue "estás aquí" de
+   "esto ya está" sin necesitar un tercer color. */
+.current {
+  background: color-mix(in srgb, var(--color-brand-default) 50%, var(--color-line-divider));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .segment {
+    transition: none;
+  }
+}
+
+/* TE:END account-flow */

@@ -32,6 +32,26 @@ const whiteListedEndpoint = [
     method: 'POST',
     path: `${experienceRoutes.prefix}/preflight/sign-in-passkey/authentication`,
   },
+  /**
+   * LOGTO PATCH(te-channel-proxy): GET /experience/verification/te-channel/config
+   *
+   * Es la lectura del interruptor, y la pantalla de acceso la hace **al pintarse**, antes de que
+   * exista ninguna interacción: es lo que decide si el QR se dibuja. Sin esta entrada respondía
+   * `404 session.interaction_not_found` en cada carga, el cliente lo trataba como fail-closed y el
+   * factor no se ofrecía nunca — el canal entero quedaba invisible sin que nada lo dijera.
+   *
+   * Que esté aquí NO relaja la regla del resto del canal. Las otras seis rutas —abrir, rotar,
+   * sondear, confirmar, despachar y listar dispositivos— siguen exigiendo una interacción viva, que
+   * es la precondición que impide que una sesión de canal exista fuera de un login en curso (DS-2).
+   * Ésta no toca estado de interacción, no crea nada y no lee nada del usuario: devuelve dos
+   * booleanos de configuración del tenant, exactamente como `GET /experience/sso-connectors`.
+   *
+   * Upstream: la lista tenía tres entradas.
+   */
+  {
+    method: 'GET',
+    path: `${experienceRoutes.verification}/te-channel/config`,
+  },
 ];
 
 /**

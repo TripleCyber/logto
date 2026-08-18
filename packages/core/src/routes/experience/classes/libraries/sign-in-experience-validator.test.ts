@@ -796,6 +796,168 @@ describe('SignInExperienceValidator', () => {
     });
   });
 
+  /**
+   * LOGTO PATCH(social-sign-in-only-targets): a social connector target listed in
+   * `socialSignIn.signInOnlyConnectorTargets` may authenticate an existing user but must never
+   * create one.
+   */
+  describe('social sign-in-only connector targets', () => {
+    const walletConnectorId = 'wallet_connector_id';
+    const walletTarget = 'wallet';
+    const githubConnectorId = 'github_connector_id';
+    const githubTarget = 'github';
+
+    const targetsByConnectorId: Record<string, string> = {
+      [walletConnectorId]: walletTarget,
+      [githubConnectorId]: githubTarget,
+    };
+
+    const getConnector = jest.fn().mockImplementation(async (connectorId: string) => ({
+      metadata: { target: targetsByConnectorId[connectorId] },
+    }));
+
+    const socialTenant = new MockTenant(undefined, { signInExperiences }, undefined, {
+      ssoConnectors,
+      socials: { getConnector },
+    });
+
+    const buildSocialRecord = (connectorId: string, verified = true) =>
+      new SocialVerification(socialTenant.libraries, socialTenant.queries, {
+        id: `social_verification_${connectorId}`,
+        type: VerificationType.Social,
+        connectorId,
+        ...(verified && {
+          socialUserInfo: { id: 'identity_id', email: `foo@${emailDomain}` },
+        }),
+      });
+
+    const verifiedWalletRecord = buildSocialRecord(walletConnectorId);
+    const unverifiedWalletRecord = buildSocialRecord(walletConnectorId, false);
+    const verifiedGithubRecord = buildSocialRecord(githubConnectorId);
+
+    const buildValidator = (signInExperience: unknown) => {
+      signInExperiences.findDefaultSignInExperience.mockResolvedValueOnce(signInExperience);
+
+      return new SignInExperienceValidator(socialTenant.libraries, socialTenant.queries);
+    };
+
+    const registrationBlocked = new RequestError({
+      code: 'user.identity_not_exist',
+      status: 403,
+    });
+
+    beforeEach(() => {
+      getConnector.mockClear();
+    });
+
+    it('rejects registration driven by a sign-in-only social target', async () => {
+      const validator = buildValidator({
+        ...mockSignInExperience,
+        signInMode: SignInMode.SignInAndRegister,
+        socialSignIn: { signInOnlyConnectorTargets: [walletTarget] },
+      });
+
+      await expect(
+        validator.guardInteractionEvent(InteractionEvent.Register, false, [verifiedWalletRecord])
+      ).rejects.toMatchError(registrationBlocked);
+    });
+
+    it('is not bypassed by the verified one-time token escape hatch', async () => {
+      // The `Register` branch lets a verified one-time token through even when registration is
+      // turned off. The sign-in-only target guard must run *before* that escape hatch.
+      const validator = buildValidator({
+        ...mockSignInExperience,
+        signInMode: SignInMode.SignIn,
+        socialSignIn: { signInOnlyConnectorTargets: [walletTarget] },
+      });
+
+      await expect(
+        validator.guardInteractionEvent(InteractionEvent.Register, true, [
+          oneTimeTokenVerificationRecord,
+          verifiedWalletRecord,
+        ])
+      ).rejects.toMatchError(registrationBlocked);
+    });
+
+    it('keeps the one-time token escape hatch working without a sign-in-only social record', async () => {
+      const validator = buildValidator({
+        ...mockSignInExperience,
+        signInMode: SignInMode.SignIn,
+        socialSignIn: { signInOnlyConnectorTargets: [walletTarget] },
+      });
+
+      await expect(
+        validator.guardInteractionEvent(InteractionEvent.Register, true, [
+          oneTimeTokenVerificationRecord,
+        ])
+      ).resolves.not.toThrow();
+    });
+
+    it('leaves other social connectors free to register', async () => {
+      const validator = buildValidator({
+        ...mockSignInExperience,
+        signInMode: SignInMode.SignInAndRegister,
+        socialSignIn: { signInOnlyConnectorTargets: [walletTarget] },
+      });
+
+      await expect(
+        validator.guardInteractionEvent(InteractionEvent.Register, false, [verifiedGithubRecord])
+      ).resolves.not.toThrow();
+    });
+
+    it('is off by default: an empty policy keeps upstream registration behaviour', async () => {
+      const validator = buildValidator({
+        ...mockSignInExperience,
+        signInMode: SignInMode.SignInAndRegister,
+        socialSignIn: {},
+      });
+
+      await expect(
+        validator.guardInteractionEvent(InteractionEvent.Register, false, [verifiedWalletRecord])
+      ).resolves.not.toThrow();
+    });
+
+    it('ignores an unverified social record', async () => {
+      const validator = buildValidator({
+        ...mockSignInExperience,
+        signInMode: SignInMode.SignInAndRegister,
+        socialSignIn: { signInOnlyConnectorTargets: [walletTarget] },
+      });
+
+      await expect(
+        validator.guardInteractionEvent(InteractionEvent.Register, false, [unverifiedWalletRecord])
+      ).resolves.not.toThrow();
+
+      expect(getConnector).not.toHaveBeenCalled();
+    });
+
+    it('does not read the social sign-in policy when no social record is involved', async () => {
+      const validator = buildValidator({
+        ...mockSignInExperience,
+        signInMode: SignInMode.SignInAndRegister,
+        socialSignIn: { signInOnlyConnectorTargets: [walletTarget] },
+      });
+
+      await expect(
+        validator.guardInteractionEvent(InteractionEvent.Register)
+      ).resolves.not.toThrow();
+
+      expect(getConnector).not.toHaveBeenCalled();
+    });
+
+    it('still lets an already enrolled identity sign in', async () => {
+      const validator = buildValidator({
+        ...mockSignInExperience,
+        signInMode: SignInMode.SignInAndRegister,
+        socialSignIn: { signInOnlyConnectorTargets: [walletTarget] },
+      });
+
+      await expect(
+        validator.guardIdentificationMethod(InteractionEvent.SignIn, verifiedWalletRecord)
+      ).resolves.not.toThrow();
+    });
+  });
+
   describe('isRegistrationDisabled', () => {
     it('returns true when the sign-in mode is sign-in only', async () => {
       const validator = buildValidatorWithSignInMode(SignInMode.SignIn);

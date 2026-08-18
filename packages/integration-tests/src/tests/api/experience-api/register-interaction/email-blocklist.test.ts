@@ -20,7 +20,10 @@ import {
   createDefaultTenantUserWithPassword,
   deleteDefaultTenantUser,
 } from '#src/helpers/profile.js';
-import { enableAllPasswordSignInMethods } from '#src/helpers/sign-in-experience.js';
+import {
+  enableAllPasswordSignInMethods,
+  enableSocialSignInConnectorTargets,
+} from '#src/helpers/sign-in-experience.js';
 import { generateEmail } from '#src/utils.js';
 
 const emailNotAllowedError = {
@@ -130,6 +133,7 @@ describe('should reject the email registration if the email is in the blocklist'
     beforeAll(async () => {
       const { id: socialConnectorId } = await setSocialConnector();
       connectorIdMap.set(mockSocialConnectorId, socialConnectorId);
+      await enableSocialSignInConnectorTargets();
     });
 
     it('should reject social register if the provided email is in the blocklist', async () => {

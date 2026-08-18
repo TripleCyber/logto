@@ -13,6 +13,8 @@ import {
 
 import RequestError from '#src/errors/RequestError/index.js';
 import { validateEmailAgainstBlocklistPolicy } from '#src/libraries/sign-in-experience/index.js';
+/** LOGTO PATCH(social-sign-in-only-targets): shared with the deprecated Interaction API. */
+import { assertSocialTargetsAllowRegistration } from '#src/libraries/verification-helpers/social-verification.js';
 import type Libraries from '#src/tenants/Libraries.js';
 import type Queries from '#src/tenants/Queries.js';
 import assertThat from '#src/utils/assert-that.js';
@@ -98,9 +100,22 @@ export class SignInExperienceValidator {
   /**
    * @param event - The interaction event to guard
    * @param hasVerifiedOneTimeToken - Whether there is a verified one-time token verification record
+   * @param verificationRecords - All the verification records held by the current interaction. Used
+   * to reject registration driven by a sign-in-only social connector target.
    * @throws {RequestError} with status 403 if the interaction event is not allowed
    */
-  public async guardInteractionEvent(event: InteractionEvent, hasVerifiedOneTimeToken = false) {
+  public async guardInteractionEvent(
+    event: InteractionEvent,
+    hasVerifiedOneTimeToken = false,
+    /**
+     * LOGTO PATCH(social-sign-in-only-targets): the interaction's verification records, so the
+     * `Register` branch can tell which social connector is driving the registration.
+     * Optional and defaulted, so every existing call site keeps compiling and behaving the same.
+     *
+     * Upstream: (parameter does not exist)
+     */
+    verificationRecords: readonly VerificationRecord[] = []
+  ) {
     const { signInMode } = await this.getSignInExperienceData();
 
     switch (event) {
@@ -112,6 +127,20 @@ export class SignInExperienceValidator {
         break;
       }
       case InteractionEvent.Register: {
+        /**
+         * LOGTO PATCH(social-sign-in-only-targets): reject registration driven by a social
+         * connector target that is configured as sign-in only.
+         *
+         * Deliberately placed BEFORE the `signInMode` assertion below: that assertion carries an
+         * escape hatch (`|| hasVerifiedOneTimeToken`) which lets a verified one-time token open
+         * `Register` even when registration is turned off. Anything expressed as another disjunct
+         * of that assertion, or placed behind an early return of it, would inherit the escape
+         * hatch. As a separate, prior and unconditional check, this guard cannot be widened by it.
+         *
+         * Upstream: (check does not exist)
+         */
+        await this.guardSocialRegistration(verificationRecords);
+
         assertThat(
           signInMode !== SignInMode.SignIn ||
             // This guarantees new users can still be created through one-time token
@@ -388,6 +417,36 @@ export class SignInExperienceValidator {
 
     const { emailBlocklistPolicy } = await this.getSignInExperienceData();
     await validateEmailAgainstBlocklistPolicy(emailBlocklistPolicy, email);
+  }
+
+  /**
+   * LOGTO PATCH(social-sign-in-only-targets): reject a `Register` interaction that is driven by a
+   * social connector whose target is listed in `socialSignIn.signInOnlyConnectorTargets`.
+   *
+   * @remarks
+   * The rule itself lives in {@link assertSocialTargetsAllowRegistration}, shared with the
+   * deprecated Interaction API's own registration path, which never reaches this class. This
+   * method only selects which connectors the rule applies to: every *verified* social record the
+   * interaction currently holds, whatever `verificationId` the caller submitted to `createUser`.
+   *
+   * @throws {RequestError} with status 403 if a verified social verification record belongs to a
+   * sign-in-only connector target
+   *
+   * Upstream: (method does not exist)
+   */
+  private async guardSocialRegistration(verificationRecords: readonly VerificationRecord[]) {
+    const verifiedSocialConnectorIds = verificationRecords.flatMap((record) =>
+      record.type === VerificationType.Social && record.isVerified ? [record.connectorId] : []
+    );
+
+    await assertSocialTargetsAllowRegistration(
+      {
+        libraries: this.libraries,
+        // The per-interaction snapshot, so the policy is not read a second time.
+        getSignInExperience: async () => this.getSignInExperienceData(),
+      },
+      verifiedSocialConnectorIds
+    );
   }
 
   /**

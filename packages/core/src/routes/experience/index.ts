@@ -38,6 +38,8 @@ import newPasswordIdentityVerificationRoutes from './verification-routes/new-pas
 import oneTimeTokenRoutes from './verification-routes/one-time-token.js';
 import passwordVerificationRoutes from './verification-routes/password-verification.js';
 import socialVerificationRoutes from './verification-routes/social-verification.js';
+// LOGTO PATCH(te-channel-proxy): canal TripleEnable (QR y push) proxeado servidor a servidor.
+import teChannelRoutes from './verification-routes/te-channel.js';
 import totpVerificationRoutes from './verification-routes/totp-verification.js';
 import verificationCodeRoutes from './verification-routes/verification-code.js';
 import webAuthnVerificationRoute from './verification-routes/web-authn-verification.js';
@@ -217,6 +219,17 @@ export default function experienceApiRoutes<T extends AnonymousRouter>(
   backupCodeVerificationRoutes(experienceRouter, tenant);
   newPasswordIdentityVerificationRoutes(experienceRouter, tenant);
   oneTimeTokenRoutes(experienceRouter, tenant);
+
+  /**
+   * LOGTO PATCH(te-channel-proxy): se monta como una ruta de verificación más, con lo que hereda
+   * `koaInteractionDetails`, `koaExperienceInteraction`, `koaExperienceAuditLog` y `koaGuard`. No se
+   * añade a `whiteListedEndpoint` de `koa-experience-interaction.ts` a propósito: exigir una
+   * interacción OIDC viva es lo que impide que una sesión de canal exista fuera de un login en
+   * curso (DS-2).
+   *
+   * Upstream: (no existe)
+   */
+  teChannelRoutes(experienceRouter, tenant);
 
   profileRoutes(experienceRouter, tenant);
   experienceAnonymousRoutes(experienceRouter, tenant);

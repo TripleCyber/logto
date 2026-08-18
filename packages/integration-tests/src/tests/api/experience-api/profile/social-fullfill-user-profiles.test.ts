@@ -23,7 +23,10 @@ import {
   successfullyVerifyVerificationCode,
 } from '#src/helpers/experience/verification-code.js';
 import { expectRejects } from '#src/helpers/index.js';
-import { enableAllPasswordSignInMethods } from '#src/helpers/sign-in-experience.js';
+import {
+  enableAllPasswordSignInMethods,
+  enableSocialSignInConnectorTargets,
+} from '#src/helpers/sign-in-experience.js';
 import { generateNewUser } from '#src/helpers/user.js';
 import { generateEmail, generateUsername } from '#src/utils.js';
 
@@ -43,6 +46,7 @@ describe('fulfill missing mandatory profile fields', () => {
       setEmailConnector(),
     ]);
     connectorIdMap.set(mockSocialConnectorId, socialConnectorId);
+    await enableSocialSignInConnectorTargets();
 
     await updateSignInExperience({
       socialSignIn: {

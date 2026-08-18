@@ -1,4 +1,12 @@
-import zhCN from '@logto/phrases-experience/lib/locales/zh-cn/index.js';
+/*
+ * LOGTO PATCH(te-factor-choice): se toma el idioma del `resource` publicado y no del archivo de
+ * la carpeta del idioma. El fork añade el grupo `te` al construir `resource`, para no duplicar
+ * el archivo de textos en los veinte idiomas; el archivo suelto ya no es un `LocalePhrase`
+ * completo, que es exactamente lo que este mock promete devolver.
+ *
+ * Upstream: `import zhCN from '@logto/phrases-experience/lib/locales/zh-cn/index.js';`
+ */
+import resource from '@logto/phrases-experience';
 import { type CustomPhrase, type SignInExperience } from '@logto/schemas';
 import { pickDefault, createMockUtils } from '@logto/shared/esm';
 
@@ -48,6 +56,8 @@ const customPhrases = {
     })
   ),
 } satisfies Partial<Queries['customPhrases']>;
+
+const zhCN = resource['zh-CN'];
 
 const getPhrases = jest.fn(async () => zhCN);
 

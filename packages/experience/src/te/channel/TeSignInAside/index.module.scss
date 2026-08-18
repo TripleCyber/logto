@@ -1,0 +1,216 @@
+@use '@/shared/scss/underscore' as _;
+
+/*
+ * La columna del código en la tarjeta de acceso.
+ *
+ * ## Nada de color, tipografía ni forma inventados
+ *
+ * La maqueta habla en sus propios tokens; aquí se traducen a los que la experiencia ya tiene, y
+ * no se define ninguno nuevo:
+ *
+ *   --surface-sunken  →  --color-bg-layer-2      (el fondo hundido de la columna)
+ *   --line            →  --color-line-divider    (la línea que la separa del formulario)
+ *   --ink-3           →  --color-type-secondary  (la nota y los textos de apoyo)
+ *   --brand           →  --color-brand-default   (el punto que late)
+ *
+ * Los cuatro están definidos para claro y para oscuro en `shared/scss/_colors.scss`, así que esta
+ * hoja no necesita saber en qué tema está. Y `--color-brand-default` sale de `primaryColor` de la
+ * consola, con lo que el punto latiendo cambia de color con el tenant sin tocar nada.
+ *
+ * ## Por qué `position: absolute` y no una rejilla
+ *
+ * La columna tiene que ocupar la tarjeta de arriba abajo y sangrar hasta su borde, pero en el DOM
+ * cuelga de `.wrapper`, dentro del relleno de la tarjeta y **al lado** del encabezado de marca,
+ * del formulario y del pie, que los pinta `LandingPageLayout` y son de upstream. Sacarla del flujo
+ * es lo que permite maquetar dos columnas sin reestructurar nada de eso: la izquierda la ocupa
+ * ella, y la derecha es el flujo de siempre con más relleno a la izquierda —eso lo abre
+ * `te/theme/signin-split.scss`, que es quien puede hablarle a la tarjeta—.
+ *
+ * `.logto_main-content` es `position: relative` en las dos plataformas, así que el ancla existe.
+ */
+
+.aside {
+  position: absolute;
+  /* Arriba, abajo e izquierda pegada a la tarjeta; el ancho lo fija la columna. */
+  inset: 0 auto 0 0;
+  width: 340px;
+
+  /*
+   * Escondida por defecto y encendida por la media query, que es el ÚNICO interruptor
+   * escritorio/móvil de esta pantalla. Ver `te/theme/signin-split.scss`.
+   *
+   * `@supports selector(:has(*))`: sin `:has()` la tarjeta no puede ensancharse, y una columna de
+   * 340 px dentro de una tarjeta de 540 aplastaría el formulario. Sin soporte no hay columna, y se
+   * llega al factor por la fila del conector, que sigue estando.
+   */
+  display: none;
+  padding: _.unit(8) _.unit(7);
+  background: var(--color-bg-layer-2);
+  border-right: _.border(var(--color-line-divider));
+  /*
+   * Las mismas esquinas que la tarjeta, en las dos plataformas.
+   *
+   * Antes había debajo un `:global(body.mobile) .aside { border-radius: 0 }` sin condición de
+   * ancho, y era correcto: con user-agent móvil la tarjeta era cuadrada y a sangre. Desde F5 ya no
+   * lo es —en cuanto hay dos columnas la tarjeta vuelve a ser tarjeta con sus 16 px de radio,
+   * mire el user-agent lo que mire; ver la causa (a) en `te/theme/signin-split.scss`—, así que una
+   * columna cuadrada asomaría por las esquinas. Y por debajo de 820 px no hay columna que
+   * redondear: `display: none`.
+   */
+  border-radius: 16px 0 0 16px;
+  text-align: center;
+  /* Una ventana muy baja no puede cortar el código sin dejar forma de bajar hasta él. */
+  overflow-y: auto;
+}
+
+@supports selector(:has(*)) {
+  @media (min-width: 820px) {
+    .aside {
+      /*
+       * `flex-column` sin argumentos = `align-items: center; justify-content: center`. Ese
+       * `justify-content: center` es la mitad del criterio de F5: la columna centra su contenido
+       * sobre el centro de la tarjeta, y `te/theme/signin-split.scss` se encarga de que el
+       * formulario de al lado caiga sobre esa misma línea. La otra mitad no se puede escribir
+       * aquí: son los rellenos flexibles de `FirstScreenLayout`, que están fuera de esta columna.
+       */
+      @include _.flex-column;
+      gap: 0;
+    }
+  }
+}
+
+.titulo {
+  font: var(--font-title-3);
+  color: var(--color-type-primary);
+  margin: 0 0 _.unit(1);
+}
+
+.nota {
+  @include _.text-hint;
+  margin: 0 0 _.unit(4);
+  /* La medida corta de la maqueta: una nota de dos líneas se lee de un vistazo. */
+  max-width: 24ch;
+}
+
+/* ── El marco del código ──────────────────────────────────────────────────
+   Fondo blanco SIEMPRE, también en oscuro, por el mismo motivo que en la
+   pantalla propia: un QR invertido lo leen algunos lectores y otros no, y el
+   que falla es siempre el del usuario que tiene prisa. */
+
+.marco {
+  padding: _.unit(3);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 6%), 0 12px 32px -16px rgba(0, 0, 0, 24%);
+}
+
+/* El blanco es PARA el código, no para el hueco. Mientras se abre el canal, y sobre todo cuando la
+   cartera ya se llevó el código, lo que quedaba era una lámina blanca de casi doscientos píxeles
+   —lo más ruidoso de la columna— con una ruedecita dentro: se leía como algo roto y no como «ya
+   está, termina en el móvil». Se apaga y queda el contorno, con el mismo tamaño exacto: el
+   `box-shadow` interior no ocupa caja, un `border` sí. */
+.marcoApagado {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-line-divider);
+}
+
+.marcoVacio {
+  display: grid;
+  place-items: center;
+  /* El mismo lado que el lienzo (`TeSignInAside/index.tsx` → `ladoAside`, que baja por
+     `--te-qr-lado`): el hueco no cambia de tamaño al pasar de «cargando» a «aquí está el
+     código», así que la columna no da un salto. */
+  width: var(--te-qr-lado, 188px);
+  height: var(--te-qr-lado, 188px);
+}
+
+/* ── La vida del código ───────────────────────────────────────────────────
+   DEBAJO del código y nunca encima: taparlo con su propio reloj es impedir
+   justo lo que se pide hacer. */
+
+.reloj {
+  width: var(--te-qr-lado, 188px);
+  margin-top: _.unit(3);
+}
+
+/* ── El número de emparejamiento ──────────────────────────────────────────
+   Cifras tabulares: son datos que una persona compara carácter a carácter con
+   la pantalla del móvil, así que no pueden bailar de anchura al cambiar. */
+
+.numero {
+  @include _.flex-column;
+  gap: _.unit(0.5);
+  margin-top: _.unit(4);
+}
+
+.numeroEtiqueta {
+  font: var(--font-body-3);
+  color: var(--color-type-secondary);
+}
+
+.numeroValor {
+  font-variant-numeric: tabular-nums;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  color: var(--color-type-primary);
+}
+
+/* ── La espera ────────────────────────────────────────────────────────────
+   Esperar NO es fallar, y por eso este bloque no tiene ninguna variante roja:
+   el punto late mientras el canal está vivo y el texto lo pone `TeStatus`. */
+
+.espera {
+  @include _.flex-row;
+  justify-content: center;
+  gap: _.unit(2);
+  margin-top: _.unit(4);
+  min-height: _.unit(5);
+}
+
+.pulso {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-brand-default);
+  animation: te-signin-aside-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes te-signin-aside-pulse {
+  50% {
+    opacity: 25%;
+    transform: scale(0.7);
+  }
+}
+
+/* El reintento sólo aparece en los estados terminales, y nunca antes de que el canal haya dicho
+   algo: un botón de reintentar sobre un código que está vivo sugiere que hay algo que arreglar. */
+
+.reintento {
+  margin-top: _.unit(4);
+  width: auto;
+}
+
+/* Movimiento reducido: el punto se queda quieto y encendido. Deja de decir «esto está vivo» por
+   sí solo, pero el texto de al lado ya lo dice, así que no se pierde información. */
+@media (prefers-reduced-motion: reduce) {
+  .pulso {
+    animation: none;
+  }
+}
+
+/* ── Tema oscuro ──────────────────────────────────────────────────────────
+   `html[data-theme='dark']` y no `body.dark`: la segunda viene de CSS Modules y
+   en el navegador es un nombre hasheado que cambia en cada build.
+   El marco del código se queda blanco a propósito; lo que cambia es la sombra,
+   que sobre un lienzo oscuro tiene que ser más profunda para no flotar. */
+
+/* `:not(.marcoApagado)` no es adorno: esta regla tiene más especificidad que `.marcoApagado`, así
+   que sin la exclusión el marco apagado seguiría proyectando la sombra de una lámina que ya no
+   está — un rectángulo que flota sobre nada. */
+:global(html[data-theme='dark']) {
+  .marco:not(.marcoApagado) {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 32%), 0 16px 40px -16px rgba(0, 0, 0, 64%);
+  }
+}

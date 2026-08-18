@@ -1,5 +1,5 @@
 /* eslint-disable max-lines */
-import { TemplateType } from '@logto/connector-kit';
+import { ConnectorType, TemplateType } from '@logto/connector-kit';
 import {
   adminConsoleApplicationId,
   adminTenantId,
@@ -28,6 +28,7 @@ import { createContextWithRouteParameters } from '#src/utils/test-utils.js';
 import { type Interaction, type WithHooksAndLogsContext } from '../types.js';
 
 import { EmailCodeVerification } from './verifications/code-verification.js';
+import { SocialVerification } from './verifications/social-verification.js';
 import { SignInPasskeyVerification } from './verifications/web-authn-verification.js';
 
 const { jest } = import.meta;
@@ -295,6 +296,86 @@ describe('ExperienceInteraction class', () => {
         'uid',
         mockEmail
       );
+    });
+  });
+
+  /**
+   * LOGTO PATCH(social-sign-in-only-targets): a social connector target listed in
+   * `socialSignIn.signInOnlyConnectorTargets` must never provision a user.
+   */
+  describe('sign-in-only social connector target', () => {
+    const walletTarget = 'wallet';
+    const getConnector = jest.fn().mockResolvedValue({
+      type: ConnectorType.Social,
+      metadata: { target: walletTarget },
+      dbEntry: { syncProfile: false },
+    });
+
+    const socialTenant = new MockTenant(
+      createMockProvider(mockProviderInteractionDetails),
+      { users: userQueries, signInExperiences },
+      undefined,
+      { users: userLibraries, ssoConnectors, socials: { getConnector } }
+    );
+
+    const buildWalletVerificationRecord = () =>
+      new SocialVerification(socialTenant.libraries, socialTenant.queries, {
+        id: 'mock_wallet_verification_id',
+        type: VerificationType.Social,
+        connectorId: 'mock_wallet_connector_id',
+        socialUserInfo: { id: 'wallet_identity_id' },
+      });
+
+    beforeEach(() => {
+      userLibraries.insertUser.mockClear();
+      signInExperiences.findDefaultSignInExperience.mockResolvedValue({
+        ...mockSignInExperience,
+        signInMode: SignInMode.SignInAndRegister,
+        socialSignIn: { signInOnlyConnectorTargets: [walletTarget] },
+      });
+    });
+
+    afterEach(() => {
+      signInExperiences.findDefaultSignInExperience.mockResolvedValue({
+        ...mockSignInExperience,
+        signUp: {
+          identifiers: [SignInIdentifier.Email],
+          password: false,
+          verify: true,
+        },
+      });
+    });
+
+    it('does not create a user for an unknown identity', async () => {
+      const experienceInteraction = new ExperienceInteraction(
+        ctx,
+        socialTenant,
+        InteractionEvent.Register
+      );
+      const walletVerificationRecord = buildWalletVerificationRecord();
+
+      experienceInteraction.setVerificationRecord(walletVerificationRecord);
+
+      await expect(
+        experienceInteraction.createUser(walletVerificationRecord.id)
+      ).rejects.toMatchError(new RequestError({ code: 'user.identity_not_exist', status: 403 }));
+
+      expect(userLibraries.insertUser).not.toHaveBeenCalled();
+    });
+
+    it('rejects switching the interaction to Register', async () => {
+      const experienceInteraction = new ExperienceInteraction(
+        ctx,
+        socialTenant,
+        InteractionEvent.SignIn
+      );
+      const walletVerificationRecord = buildWalletVerificationRecord();
+
+      experienceInteraction.setVerificationRecord(walletVerificationRecord);
+
+      await expect(
+        experienceInteraction.setInteractionEvent(InteractionEvent.Register)
+      ).rejects.toMatchError(new RequestError({ code: 'user.identity_not_exist', status: 403 }));
     });
   });
 

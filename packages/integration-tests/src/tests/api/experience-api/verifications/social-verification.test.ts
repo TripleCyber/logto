@@ -13,6 +13,7 @@ import {
   successfullyVerifySocialAuthorization,
 } from '#src/helpers/experience/social-verification.js';
 import { expectRejects } from '#src/helpers/index.js';
+import { enableSocialSignInConnectorTargets } from '#src/helpers/sign-in-experience.js';
 import { generateEmail } from '#src/utils.js';
 
 describe('social verification', () => {
@@ -28,6 +29,7 @@ describe('social verification', () => {
     const { id: socialConnectorId } = await setSocialConnector();
     connectorIdMap.set(mockSocialConnectorId, socialConnectorId);
     connectorIdMap.set(mockEmailConnectorId, emailConnectorId);
+    await enableSocialSignInConnectorTargets();
   });
 
   afterAll(async () => {
@@ -91,6 +93,29 @@ describe('social verification', () => {
           status: 404,
         }
       );
+    });
+
+    it('should throw exactly like a not found connector when the connector is disabled in the sign-in experience', async () => {
+      const client = await initExperienceClient();
+      const connectorId = connectorIdMap.get(mockSocialConnectorId)!;
+
+      // Turn the social sign-in channel off, the way the console does.
+      await enableSocialSignInConnectorTargets([]);
+
+      try {
+        await expectRejects(
+          client.getSocialAuthorizationUri(connectorId, {
+            redirectUri,
+            state,
+          }),
+          {
+            code: 'entity.not_found',
+            status: 404,
+          }
+        );
+      } finally {
+        await enableSocialSignInConnectorTargets();
+      }
     });
 
     it('should return the authorizationUri and verificationId', async () => {

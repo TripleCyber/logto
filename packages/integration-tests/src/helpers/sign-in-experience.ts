@@ -1,6 +1,7 @@
 import type { SignInExperience } from '@logto/schemas';
 import { SignInMode, SignInIdentifier, MfaFactor, MfaPolicy, ConnectorType } from '@logto/schemas';
 
+import { mockSocialConnectorTarget } from '#src/__mocks__/connectors-mock.js';
 import { updateSignInExperience } from '#src/api/index.js';
 
 import { clearConnectorsByTypes } from './connector.js';
@@ -283,4 +284,20 @@ export const disablePasswordExpiration = async () =>
     passwordExpiration: {
       enabled: false,
     },
+  });
+
+/**
+ * Enable the given social connector targets for sign-in.
+ *
+ * The `socialSignInConnectorTargets` switch is enforced server-side (see
+ * `LOGTO PATCH(social-sign-in-connector-targets-enforcement)` in
+ * `core/src/libraries/verification-helpers/social-verification.ts`), so a test that starts a
+ * social authorization has to enable the connector's target. Call it *after* creating the
+ * connector: the sign-in experience API silently drops targets with no matching connector.
+ */
+export const enableSocialSignInConnectorTargets = async (
+  targets: string[] = [mockSocialConnectorTarget]
+) =>
+  updateSignInExperience({
+    socialSignInConnectorTargets: targets,
   });

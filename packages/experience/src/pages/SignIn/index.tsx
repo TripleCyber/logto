@@ -17,6 +17,8 @@ import TermsAndPrivacyLinks from '@/containers/TermsAndPrivacyLinks';
 import useNavigateWithPreservedSearchParams from '@/hooks/use-navigate-with-preserved-search-params';
 import { useSieMethods } from '@/hooks/use-sie';
 import useTerms from '@/hooks/use-terms';
+import TeSignInAside from '@/te/channel/TeSignInAside'; // LOGTO PATCH(te-signin-split)
+import useVisibleSocialConnectors from '@/te/channel/use-visible-social-connectors'; // LOGTO PATCH(te-qr-desktop)
 
 import ErrorPage from '../ErrorPage';
 
@@ -38,6 +40,9 @@ const SignInFooters = () => {
   } = useSieMethods();
 
   const { showSingleSignOnForm } = useContext(SingleSignOnFormModeContext);
+
+  // LOGTO PATCH(te-qr-desktop): ver el comentario del separador, más abajo.
+  const conectoresSocialesVisibles = useVisibleSocialConnectors(socialConnectors);
 
   const handleSsoNavigation = useCallback(async () => {
     /**
@@ -88,8 +93,15 @@ const SignInFooters = () => {
         )
       }
       {
+        /*
+         * LOGTO PATCH(te-qr-desktop): el separador se condiciona a los conectores que de verdad se
+         * pintan, no a los configurados. En escritorio la cartera se retira de la lista (el código
+         * ya está arriba) y con ella como único conector esto dejaba un «or» sobre nada.
+         *
+         * Upstream: `socialConnectors.length > 0`.
+         */
         // Social sign-in methods
-        signInMethods.length > 0 && socialConnectors.length > 0 && (
+        signInMethods.length > 0 && conectoresSocialesVisibles.length > 0 && (
           <>
             <Divider label="description.or" className={styles.divider} />
             <SocialSignInList socialConnectors={socialConnectors} className={styles.main} />
@@ -126,6 +138,23 @@ const SignIn = () => {
   return (
     <LandingPageLayout title="description.sign_in_to_your_account">
       <GoogleOneTap context="signin" />
+      {/*
+        LOGTO PATCH(te-signin-split): C1 · la columna del código de TripleEnable.
+
+        Va ANTES del formulario a propósito, y no donde se pinta. En pantalla está a la izquierda
+        —la saca del flujo `position: absolute`, ver su hoja—, y este orden es el que hace que el
+        recorrido con teclado y con lector de pantalla siga el mismo camino que la vista: primero
+        la vía que no pide teclear nada, después el formulario.
+
+        Antes esto era `<TeQrInline/>` entre `<Main/>` y `<SignInFooters/>`, es decir, el código
+        apilado debajo del formulario y estrecho. La columna es la maqueta aprobada.
+
+        El componente decide solo si existe: sin conector encendido en la consola o con te-api
+        caída no pinta nada, y entonces la tarjeta vuelve a su ancho de siempre.
+
+        Upstream: `<Main/>` y `<SignInFooters/>` sin nada en medio.
+      */}
+      <TeSignInAside />
       <WebAuthnContextProvider>
         <SingleSignOnFormModeContextProvider>
           <Main signInMethods={signInMethods} socialConnectors={socialConnectors} />

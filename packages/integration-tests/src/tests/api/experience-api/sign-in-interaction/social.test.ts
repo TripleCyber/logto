@@ -13,7 +13,10 @@ import {
   setSocialConnector,
 } from '#src/helpers/connector.js';
 import { signInWithSocial } from '#src/helpers/experience/index.js';
-import { enableAllPasswordSignInMethods } from '#src/helpers/sign-in-experience.js';
+import {
+  enableAllPasswordSignInMethods,
+  enableSocialSignInConnectorTargets,
+} from '#src/helpers/sign-in-experience.js';
 import { generateNewUser } from '#src/helpers/user.js';
 import { generateEmail } from '#src/utils.js';
 
@@ -46,6 +49,7 @@ describe('social sign-in and sign-up', () => {
 
     await setEmailConnector();
     connectorIdMap.set(mockSocialConnectorId, socialConnectorId);
+    await enableSocialSignInConnectorTargets();
   });
 
   afterAll(async () => {

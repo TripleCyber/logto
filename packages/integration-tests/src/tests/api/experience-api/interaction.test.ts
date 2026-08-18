@@ -33,6 +33,7 @@ import {
   successfullyVerifyVerificationCode,
 } from '#src/helpers/experience/verification-code.js';
 import { expectRejects } from '#src/helpers/index.js';
+import { enableSocialSignInConnectorTargets } from '#src/helpers/sign-in-experience.js';
 import { generateNewUserProfile, UserApiTest } from '#src/helpers/user.js';
 import { generateEmail, generateUserId, randomString } from '#src/utils.js';
 
@@ -114,6 +115,7 @@ describe('GET /experience/interaction', () => {
     connectorIdMap.set(mockEmailConnectorId, emailConnector.id);
     connectorIdMap.set(mockSocialConnectorId, socialConnector.id);
     connectorIdMap.set(mockSmsConnectorId, smsConnector.id);
+    await enableSocialSignInConnectorTargets();
   });
 
   afterAll(async () => {

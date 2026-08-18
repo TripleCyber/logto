@@ -333,4 +333,43 @@ describe('SocialVerification', () => {
       );
     });
   });
+
+  describe('createAuthorizationUrl with a verification record session (Account Center)', () => {
+    /**
+     * Regression guard for `LOGTO PATCH(social-sign-in-connector-targets-enforcement)`: the
+     * sign-in switch (`socialSignInConnectorTargets`) is enforced in `createSocialAuthorizationUrl`,
+     * which only the sign-in flows go through. Account Center identity linking uses this
+     * `'verificationRecord'` path instead and is governed by `accountCenter.fields.social`, so it
+     * must keep working with social sign-in switched off.
+     */
+    it('should not consult the sign-in experience social targets', async () => {
+      const verification = SocialVerification.create(tenant.libraries, tenant.queries, 'google');
+      const getAuthorizationUri = jest.fn(async () => 'https://social.example.com/authorize');
+
+      getConnector.mockResolvedValueOnce({
+        ...mockConnector,
+        type: ConnectorType.Social,
+        metadata: { ...mockConnector.metadata, target: 'google' },
+        getAuthorizationUri,
+      });
+
+      // @ts-expect-error test mock context
+      const ctx: WithLogContext = {
+        ...createMockContext(),
+        ...createMockLogContext(),
+      };
+
+      await expect(
+        verification.createAuthorizationUrl(
+          ctx,
+          // @ts-expect-error test mock tenant context
+          tenantContext,
+          { state: 'state', redirectUri: 'https://logto.example.com/callback' },
+          'verificationRecord'
+        )
+      ).resolves.toBe('https://social.example.com/authorize');
+
+      expect(getAuthorizationUri).toHaveBeenCalled();
+    });
+  });
 });

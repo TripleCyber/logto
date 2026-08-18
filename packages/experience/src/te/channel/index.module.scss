@@ -1,0 +1,253 @@
+@use '@/shared/scss/underscore' as _;
+
+/*
+ * Estilos de las pantallas del canal TripleEnable.
+ *
+ * ## Criterio
+ *
+ * Nada de aquí inventa color, tipografía ni forma: todo sale de las variables que la experiencia
+ * ya define (`--color-*`, `--font-*`) y de la rejilla de 4 px de `_.unit()`. Es lo que hace que
+ * estas pantallas se lean como pantallas de Logto — porque lo son — y lo que mantiene el color
+ * de marca bajo el control de la consola (`primaryColor` → `--color-brand-default`).
+ *
+ * ## La trampa del tema oscuro, ya documentada en `te/theme/register.scss`
+ *
+ * `body.dark` NO sirve: viene de CSS Modules y en el navegador es un nombre hasheado que cambia
+ * en cada build. El tema se detecta con `html[data-theme='dark']`, que es lo que fija
+ * `PageContextProvider` y sí es estable. `body.mobile` y `body.desktop` sí se pueden usar: Logto
+ * las escribe sin hashear.
+ */
+
+.contenedor {
+  @include _.flex-column;
+  @include _.full-width;
+  gap: _.unit(4);
+}
+
+/* ── El marco del código ──────────────────────────────────────────────────
+   Fondo blanco SIEMPRE, también en oscuro. Un QR invertido lo leen algunos
+   lectores y otros no, y el que falla es siempre el del usuario que tiene
+   prisa. El marco blanco sobre lienzo oscuro se lee como una decisión, no
+   como un descuido. */
+
+.marco {
+  align-self: center;
+  padding: _.unit(3);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 6%), 0 12px 32px -16px rgba(0, 0, 0, 24%);
+}
+
+/* El blanco es PARA el código, no para el hueco.
+   Sin nada que leer —mientras se abre el canal, o con el código ya reclamado— esa lámina blanca de
+   doscientos píxeles es lo más ruidoso de la pantalla y encima parece algo que se ha roto. Se
+   apaga y queda el contorno. El contorno va por `box-shadow` interior y no por `border` porque
+   así no ocupa caja: el hueco mide exactamente lo mismo con código y sin él, y nada da un salto
+   al llegar el siguiente. */
+.marcoApagado {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--color-line-divider);
+}
+
+.lienzo {
+  display: block;
+  /* El lado sale de `--te-qr-lado`, que fija el panel según la plataforma. UN solo sitio: el
+     `<canvas>` necesita ese número para que cada módulo caiga en un número entero de píxeles del
+     dispositivo, así que si el CSS y el componente lo decidieran por separado, el que perdiera
+     sería siempre el CSS —el estilo en línea gana— y la regla quedaría ahí sin hacer nada. */
+  width: var(--te-qr-lado, 200px);
+  height: var(--te-qr-lado, 200px);
+  /* Sin suavizado: un QR escalado con interpolación pierde el borde entre módulos, que es
+     justo lo que el lector mide. */
+  image-rendering: pixelated;
+}
+
+.marcoVacio {
+  display: grid;
+  place-items: center;
+  width: var(--te-qr-lado, 200px);
+  height: var(--te-qr-lado, 200px);
+}
+
+/* ── La cuenta atrás del código ───────────────────────────────────────── */
+
+.reloj {
+  @include _.flex-column;
+  @include _.full-width;
+  gap: _.unit(1);
+  align-items: center;
+}
+
+.barra {
+  width: var(--te-qr-lado, 200px);
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-line-divider);
+  overflow: hidden;
+}
+
+.barraRelleno {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-brand-default);
+  transform-origin: left center;
+  transition: transform 1s linear;
+}
+
+.pista {
+  @include _.text-hint;
+  text-align: center;
+}
+
+/* ── El número de emparejamiento y los dígitos del push ───────────────────
+   Cifras tabulares: son datos que una persona compara carácter a carácter con
+   otra pantalla, así que no pueden bailar de anchura al cambiar. */
+
+.numero {
+  @include _.flex-column;
+  align-items: center;
+  gap: _.unit(1);
+  padding: _.unit(3);
+  border-radius: 12px;
+  border: 1px solid var(--color-line-divider);
+  background: var(--color-bg-layer-2);
+}
+
+.numeroEtiqueta {
+  @include _.text-hint;
+}
+
+.numeroValor {
+  font-variant-numeric: tabular-nums;
+  font-size: 32px;
+  font-weight: 650;
+  letter-spacing: 0.12em;
+  color: var(--color-type-primary);
+}
+
+.numeroPista {
+  @include _.text-hint;
+  text-align: center;
+}
+
+/* ── Estado ─────────────────────────────────────────────────────────────── */
+
+.estado {
+  @include _.text-hint;
+  text-align: center;
+}
+
+.estadoError {
+  @include _.text-hint;
+  color: var(--color-danger-default);
+  text-align: center;
+}
+
+/* ── A dónde fue el aviso del push ────────────────────────────────────────
+   Una línea, no una tarjeta: es un dato de apoyo del estado que tiene justo
+   encima, no una cosa aparte que compita con él. Y por eso mismo hereda el
+   mismo `text-hint` que el estado en vez de estrenar tamaño — lo que la
+   persona tiene que leer primero son los dos dígitos que va a teclear.
+
+   `flex-wrap` porque la frase lleva una cubeta temporal traducida: en alemán
+   ocupa casi el doble que en inglés, y sin esto el icono empujaría el texto
+   fuera de la caja en una pantalla estrecha. */
+
+.destino {
+  @include _.text-hint;
+  display: flex;
+  flex-wrap: wrap;
+  gap: _.unit(1);
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.destinoIcono {
+  flex-shrink: 0;
+  color: var(--color-type-secondary);
+}
+
+.acciones {
+  @include _.flex-column;
+  @include _.full-width;
+  gap: _.unit(2);
+  align-items: center;
+}
+
+/* ── La lista de dispositivos ────────────────────────────────────────────
+   Filas, no tarjetas: es una elección entre iguales y la vista tiene que
+   poder recorrerla de arriba abajo sin saltar. */
+
+.dispositivos {
+  @include _.flex-column;
+  @include _.full-width;
+  gap: _.unit(2);
+}
+
+.dispositivo {
+  display: flex;
+  align-items: center;
+  gap: _.unit(3);
+  width: 100%;
+  min-height: 56px;
+  padding: _.unit(3);
+  border: 1px solid var(--color-line-divider);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--color-type-primary);
+  font: var(--font-label-2);
+  text-align: start;
+  cursor: pointer;
+}
+
+@media (hover: hover) {
+  .dispositivo:hover {
+    border-color: var(--color-brand-default);
+    background: var(--color-overlay-brand-hover);
+  }
+}
+
+.dispositivoIcono {
+  flex-shrink: 0;
+  color: var(--color-type-secondary);
+}
+
+/* El QR de escritorio ya no se incrusta bajo el formulario: vive en la columna
+   izquierda de la tarjeta de acceso, que se maqueta en
+   `TeSignInAside/index.module.scss` y `te/theme/signin-split.scss`. */
+
+/* ── Foco visible ────────────────────────────────────────────────────────
+   Obligatorio para teclado. `:focus-visible` no dispara al tocar, así que no
+   ensucia el móvil. */
+
+.dispositivo:focus-visible {
+  outline: 2px solid var(--color-brand-default);
+  outline-offset: 2px;
+}
+
+/* ── Movimiento reducido ─────────────────────────────────────────────────
+   La barra deja de animarse y salta de un valor al siguiente. El número de
+   segundos sigue actualizándose: es información, no decoración, y quitarla
+   dejaría la pantalla sin decir cuánto queda. */
+
+@media (prefers-reduced-motion: reduce) {
+  .barraRelleno {
+    transition: none;
+  }
+}
+
+/* ── Tema oscuro ─────────────────────────────────────────────────────────
+   `html[data-theme='dark']` y no `body.dark`: la segunda viene hasheada.
+   El marco del código se queda blanco a propósito (ver arriba); lo que cambia
+   es la sombra, que sobre un lienzo oscuro tiene que ser más profunda para
+   que el marco no flote. */
+
+/* `:not(.marcoApagado)` no es adorno: esta regla tiene más especificidad que `.marcoApagado`, así
+   que sin la exclusión el marco apagado seguiría proyectando la sombra de una lámina que ya no
+   está — un rectángulo que flota sobre nada. */
+:global(html[data-theme='dark']) {
+  .marco:not(.marcoApagado) {
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 32%), 0 16px 40px -16px rgba(0, 0, 0, 64%);
+  }
+}

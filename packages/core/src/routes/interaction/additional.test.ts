@@ -29,10 +29,12 @@ const { mockEsmWithActual } = createMockUtils(jest);
 const getLogtoConnectorByIdHelper = jest.fn(async (connectorId: string) => {
   const metadata = {
     id: connectorId,
+    // The social authorization URI is only issued for targets enabled in the sign-in experience.
+    target: connectorId,
   };
 
   return {
-    dbEntry: {},
+    dbEntry: { id: connectorId },
     metadata,
     type: connectorId.startsWith('social') ? ConnectorType.Social : ConnectorType.Sms,
     getAuthorizationUri: jest.fn(async () => ''),
@@ -107,7 +109,15 @@ const tenantContext = new MockTenant(
   createMockProvider(jest.fn().mockResolvedValue(baseProviderMock)),
   {
     signInExperiences: {
-      findDefaultSignInExperience: jest.fn().mockResolvedValue(mockSignInExperience),
+      findDefaultSignInExperience: jest.fn().mockResolvedValue({
+        ...mockSignInExperience,
+        // `social_connector` is the mock social connector used below; its target has to be enabled
+        // for the social authorization URI to be issued.
+        socialSignInConnectorTargets: [
+          ...mockSignInExperience.socialSignInConnectorTargets,
+          'social_connector',
+        ],
+      }),
     },
     users: {
       findUserById,

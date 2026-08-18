@@ -1,4 +1,5 @@
-import { assert, getSafe } from '@silverhand/essentials';
+import { assert, conditional, getSafe } from '@silverhand/essentials';
+import crypto from 'node:crypto';
 
 import { ConnectorError, ConnectorErrorCodes, parseJson } from '@logto/connector-kit';
 import { type KyResponse } from 'ky';
@@ -57,10 +58,31 @@ export const userProfileMapping = (
   return result.data;
 };
 
+/**
+ * Generates a PKCE code verifier (RFC 7636, section 4.1) from 32 bytes of cryptographically
+ * secure randomness, base64url-encoded into 43 unreserved characters.
+ */
+export const generateCodeVerifier = () => crypto.randomBytes(32).toString('base64url');
+
+/**
+ * Derives the `S256` code challenge (RFC 7636, section 4.2) of the given code verifier.
+ */
+export const generateCodeChallenge = (codeVerifier: string) =>
+  crypto.createHash('sha256').update(codeVerifier).digest('base64url');
+
+/**
+ * LOGTO PATCH(oauth2-pkce): accept the PKCE code verifier and send it in the token request.
+ * It is `undefined` unless the connector has `enablePkce` on, and `requestTokenEndpoint` drops
+ * undefined keys, so the request body of an existing connector is unchanged.
+ *
+ * Upstream: `(config: Oauth2ConnectorConfig, data: unknown, redirectUri: string)`, with a
+ * `tokenRequestBody` that has no `codeVerifier` key.
+ */
 export const getAccessToken = async (
   config: Oauth2ConnectorConfig,
   data: unknown,
-  redirectUri: string
+  redirectUri: string,
+  codeVerifier?: string
 ) => {
   const result = oauth2AuthResponseGuard.safeParse(data);
 
@@ -94,6 +116,7 @@ export const getAccessToken = async (
       clientId,
       clientSecret,
       ...customConfig,
+      ...conditional(codeVerifier && { codeVerifier }),
     },
   });
 

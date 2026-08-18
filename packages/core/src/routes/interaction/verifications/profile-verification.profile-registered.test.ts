@@ -1,6 +1,7 @@
 import { InteractionEvent } from '@logto/schemas';
 import { pickDefault } from '@logto/shared/esm';
 
+import { mockSignInExperience } from '#src/__mocks__/sign-in-experience.js';
 import RequestError from '#src/errors/RequestError/index.js';
 import { MockTenant } from '#src/test-utils/tenant.js';
 
@@ -21,7 +22,21 @@ const getLogtoConnectorById = jest.fn().mockResolvedValue({
   metadata: { target: 'logto' },
 });
 
-const tenantContext = new MockTenant(undefined, { users: userQueries }, { getLogtoConnectorById });
+/**
+ * LOGTO PATCH(social-sign-in-only-targets): these fixtures carry a `social` identifier, so the
+ * registration guard added to `verifyProfile` reads the sign-in experience. Stub it, otherwise
+ * the real query hits `MockQueries`' empty pool and throws `entity.not_exists_with_id`.
+ * The default social sign-in policy is empty, so registration behaviour is unchanged.
+ */
+const signInExperiences = {
+  findDefaultSignInExperience: jest.fn().mockResolvedValue(mockSignInExperience),
+};
+
+const tenantContext = new MockTenant(
+  undefined,
+  { users: userQueries, signInExperiences },
+  { getLogtoConnectorById }
+);
 const verifyProfile = await pickDefault(import('./profile-verification.js'));
 
 const identifiers: Identifier[] = [

@@ -63,27 +63,48 @@ export type BuiltInLanguageTag = z.infer<typeof builtInLanguageTagGuard>;
 
 export type Resource = Record<BuiltInLanguageTag, LocalePhrase>;
 
+/**
+ * LOGTO PATCH(te-factor-choice): garantiza el grupo `te` en todos los idiomas.
+ *
+ * `Resource` exige que cada idioma sea un `LocalePhrase` COMPLETO, así que añadir un grupo a
+ * `en` —que es de donde sale el tipo— deja a los otros diecinueve sin compilar. Las dos salidas
+ * eran duplicar el archivo de textos diecinueve veces, o esto.
+ *
+ * Se rellena con el inglés y **sólo donde falta**: el propio grupo del idioma va después en el
+ * literal, así que un `te` traducido —hoy `es`, mañana los demás— gana siempre. Traducir es
+ * trabajo de traducción y no de código; hasta que exista, un texto en inglés se lee y una clave
+ * cruda no.
+ *
+ * Upstream: el mapa `resource` se escribía directamente, sin envolver.
+ */
+const conTe = <T extends { translation: object }>(locale: T) =>
+  Object.freeze({
+    ...locale,
+    translation: { te: en.translation.te, ...locale.translation },
+  });
+
 const resource: Resource = {
-  ar,
-  cs,
-  de,
+  // LOGTO PATCH(te-factor-choice): `conTe` sólo rellena el grupo `te` cuando el idioma no lo trae.
+  ar: conTe(ar),
+  cs: conTe(cs),
+  de: conTe(de),
   en,
-  es,
-  'fa-IR': faIR,
-  fr,
-  it,
-  ja,
-  ko,
-  'pl-PL': plPL,
-  'pt-PT': ptPT,
-  'pt-BR': ptBR,
-  ru,
-  th,
-  'tr-TR': trTR,
-  'uk-UA': ukUA,
-  'zh-CN': zhCN,
-  'zh-HK': zhHK,
-  'zh-TW': zhTW,
+  es: conTe(es),
+  'fa-IR': conTe(faIR),
+  fr: conTe(fr),
+  it: conTe(it),
+  ja: conTe(ja),
+  ko: conTe(ko),
+  'pl-PL': conTe(plPL),
+  'pt-PT': conTe(ptPT),
+  'pt-BR': conTe(ptBR),
+  ru: conTe(ru),
+  th: conTe(th),
+  'tr-TR': conTe(trTR),
+  'uk-UA': conTe(ukUA),
+  'zh-CN': conTe(zhCN),
+  'zh-HK': conTe(zhHK),
+  'zh-TW': conTe(zhTW),
 };
 
 export const getDefaultLanguageTag = (language: string): LanguageTag =>

@@ -3,6 +3,7 @@ import i18next from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
 import { getI18nResource } from '@/i18n/utils';
+import { applyPhraseOverrides } from '@/te/flow/phrase-overrides'; // TE:account-flow
 
 // Call once globally
 i18next.use(initReactI18next);
@@ -19,6 +20,12 @@ const initI18n = async (initialLanguage?: string) => {
   };
 
   const i18n = i18next.init(options);
+
+  /* TE:BEGIN account-flow */
+  // Reescribe los textos del alta sobre los recursos ya cargados. Va aquí y no en
+  // `phrases-experience` para no tocar los veinte archivos de idioma de upstream.
+  applyPhraseOverrides();
+  /* TE:END account-flow */
 
   /**
    * Note

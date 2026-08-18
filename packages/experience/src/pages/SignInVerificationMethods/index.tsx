@@ -11,6 +11,7 @@ import useVerificationCodeLink from '@/components/SwitchToVerificationMethodsLin
 import useNavigateWithPreservedSearchParams from '@/hooks/use-navigate-with-preserved-search-params';
 import { useSieMethods } from '@/hooks/use-sie';
 import useStartIdentifierPasskeySignInProcessing from '@/hooks/use-start-identifier-passkey-sign-in-processing';
+import TeMethodCards from '@/te/channel/TeMethodCards'; // LOGTO PATCH(te-factor-choice)
 import { UserFlow } from '@/types';
 
 import ErrorPage from '../ErrorPage';
@@ -88,6 +89,14 @@ const SignInVerificationMethods = () => {
             }}
           />
         )}
+        {/*
+          LOGTO PATCH(te-factor-choice): C2 · las dos tarjetas de TripleEnable, al final de la
+          lista para que los métodos nativos conserven su orden. El propio componente decide si
+          se pintan: conector encendido en la consola y canal encendido en el servidor.
+
+          Upstream: la lista terminaba en la tarjeta del código de verificación.
+        */}
+        <TeMethodCards />
       </div>
     </SecondaryPageLayout>
   );
