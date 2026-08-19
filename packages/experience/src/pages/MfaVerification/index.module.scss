@@ -1,0 +1,17 @@
+@use '@/shared/scss/underscore' as _;
+
+/**
+ * LOGTO PATCH(te-push-as-mfa): la tarjeta de «aprobar en el teléfono» se pinta
+ * al lado de los factores del servidor, no dentro de su lista —no es un
+ * `MfaFactor`, ver `TePushMfaCard`—, así que quedaba fuera del `gap` de
+ * `MfaFactorList` y se veía pegada a la última tarjeta.
+ *
+ * Este contenedor repite el mismo hueco para que las dos partes se lean como
+ * una sola lista. El valor se copia a propósito de `MfaFactorList`: son dos
+ * ficheros y separarlos con una variable compartida sería inventar una API
+ * entre upstream y el parche por tres píxeles.
+ */
+.opciones {
+  @include _.flex-column;
+  gap: _.unit(3);
+}
