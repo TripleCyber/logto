@@ -13,8 +13,18 @@
  * que se despliega.
  */
 
-/** Objetivo (`target`) del conector social de TripleEnable. Un solo conector, dos canales. */
-export const objetivoConectorTe = 'tripleenable';
+/**
+ * Objetivo (`target`) del conector social de TripleEnable. Un solo conector, dos canales.
+ *
+ * Sale de `TE_CONNECTOR_TARGET` porque es el nombre con el que el conector queda registrado en
+ * Logto, y ese nombre lo elige quien despliega: si mañana se registra con otro, el canal entero
+ * dejaría de reconocerse a sí mismo y no habría forma de arreglarlo sin recompilar. Es un
+ * identificador, no un secreto, así que tiene valor por defecto — el que se usa hoy.
+ *
+ * Se compara el objetivo y no el identificador de fila porque el id lo genera cada despliegue y
+ * sería distinto en desarrollo, en pruebas y en producción.
+ */
+export const objetivoConectorTe = process.env.TE_CONNECTOR_TARGET?.trim() || 'tripleenable';
 
 /**
  * Política del selector de dispositivos (PU-12).
@@ -30,6 +40,30 @@ export const objetivoConectorTe = 'tripleenable';
  * No activar sin decisión explícita del dueño.
  */
 type PoliticaSelectorDispositivos = 'lazy' | 'eager';
+
+/**
+ * ¿El QR entra **solo**, sin pedir un segundo factor?
+ *
+ * Por defecto **sí**, y el porqué es que escanearlo ya son tres cosas a la vez: tuviste que estar
+ * físicamente delante de la pantalla que lo pinta, teclear en el teléfono el número que sólo se ve
+ * ahí, y desbloquear el teléfono con tu cara o tu huella para que la clave del llavero pudiera
+ * firmar. Posesión, inherencia y presencia. Pedir además un código por correo no añade una barrera
+ * nueva: añade un paso.
+ *
+ * Se puede apagar porque es una decisión de negocio y no de ingeniería. Con
+ * `TE_QR_SINGLE_FACTOR=false`, el QR identifica pero el segundo factor se sigue exigiendo — el
+ * push, en cambio, **siempre** cuenta como segundo factor, porque para llegar a él ya hubo un
+ * primero.
+ */
+export const qrEsFactorUnico = (entorno: NodeJS.ProcessEnv = process.env): boolean =>
+  // Por defecto `true`: hay que decir «false» a propósito para apagarlo, no acertar con la
+  // ortografía de «true» para encenderlo.
+  //
+  // Vive fuera de {@link ConfigTe} y no dentro: aquélla no existe sin las claves HMAC —son un
+  // secreto y sin ellas el canal está apagado—, mientras que esto es una decisión de política que
+  // tiene respuesta siempre. Meterlo ahí haría que un despliegue sin claves respondiera «el QR no
+  // es factor único» cuando lo cierto es «no hay canal».
+  entorno.TE_QR_SINGLE_FACTOR?.trim().toLowerCase() !== 'false';
 
 export type ClaveHmacTe = {
   kid: string;
