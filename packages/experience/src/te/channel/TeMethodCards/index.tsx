@@ -7,7 +7,25 @@ import useTeAvailability from '../use-te-availability';
 import TeMark from './TeMark';
 
 /**
- * C2 · Tras el identificador, ofrecer QR y push.
+ * C2 · Tras el identificador, ofrecer QR.
+ *
+ * ## Por qué el push NO está aquí
+ *
+ * Esta pantalla va **antes** de la contraseña: la interacción todavía no ha
+ * identificado a nadie, así que `identifiedUserId` está vacío y el despacho sale
+ * sin titular. te-api no tiene a quién avisar y el reto nace señuelo — se ve en
+ * su diario como `logto_no_dice_titular`. El teléfono no suena nunca, y por
+ * diseño (PU-4) eso es indistinguible de un rechazo: dos minutos de espera y el
+ * mismo mensaje uniforme.
+ *
+ * Resolverlo pasando el identificador tecleado es justo lo que no se puede
+ * hacer, y por dos razones que se refuerzan: sería el oráculo de existencia que
+ * PU-4 impide, y haría sonar el teléfono de cualquiera con sólo saber su correo,
+ * que es el bombardeo que PU-1 acota. El push tiene que ser el **segundo**
+ * factor, nunca el primero y nunca el único.
+ *
+ * Así que el push vive en la pantalla de segundo factor, donde el titular ya
+ * está resuelto: ver `TePushMfaCard`.
  *
  * ## Por qué NO se le pregunta al directorio si esta persona tiene cartera
  *
@@ -40,31 +58,21 @@ import TeMark from './TeMark';
  */
 const TeMethodCards = () => {
   const navigate = useNavigateWithPreservedSearchParams();
-  const { hayQr, hayPush } = useTeAvailability();
+  const { hayQr } = useTeAvailability();
+
+  if (!hayQr) {
+    return null;
+  }
 
   return (
-    <>
-      {hayQr && (
-        <VerificationMethodCard
-          Icon={TeMark}
-          titleKey="te.method.qr_title"
-          descriptionKey="te.method.qr_description"
-          onClick={() => {
-            navigate({ pathname: rutasTe.qr });
-          }}
-        />
-      )}
-      {hayPush && (
-        <VerificationMethodCard
-          Icon={TeMark}
-          titleKey="te.method.push_title"
-          descriptionKey="te.method.push_description"
-          onClick={() => {
-            navigate({ pathname: rutasTe.push });
-          }}
-        />
-      )}
-    </>
+    <VerificationMethodCard
+      Icon={TeMark}
+      titleKey="te.method.qr_title"
+      descriptionKey="te.method.qr_description"
+      onClick={() => {
+        navigate({ pathname: rutasTe.qr });
+      }}
+    />
   );
 };
 
