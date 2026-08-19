@@ -15,7 +15,7 @@ import { conditional, trySafe } from '@silverhand/essentials';
 
 import { EnvSet } from '#src/env-set/index.js';
 import { objetivoConectorTe, qrEsFactorUnico } from '#src/te/config.js';
-import { leerEstadoCanal } from '#src/te/storage.js';
+import { leerCanalCompletado } from '#src/te/storage.js';
 import RequestError from '#src/errors/RequestError/index.js';
 import { buildUserPasswordPayload } from '#src/libraries/user.utils.js';
 import { type LogEntry } from '#src/middleware/koa-audit-log.js';
@@ -934,15 +934,20 @@ export default class ExperienceInteraction {
       // (`TE_QR_SINGLE_FACTOR`, `true` por defecto), porque ahí no hubo primer factor — el QR es
       // la puerta entera, y si eso basta o no es una decisión de negocio y no de ingeniería.
       //
-      // Sin estado del canal no se exime: es el caso de un social que no es el nuestro pero
-      // comparte objetivo por accidente, y ante la duda se pide el segundo factor.
-      const estado = await leerEstadoCanal(this.ctx, this.tenant.provider);
+      // Sin canal no se exime: es el caso de un social que no es el nuestro pero comparte objetivo
+      // por accidente, y ante la duda se pide el segundo factor.
+      //
+      // Se lee la **marca** que deja `borrarEstadoCanal`, no el estado vivo. Esto corre en el
+      // `submit`, que va después de `confirm`, y `confirm` borra el estado — con el secreto del
+      // canal dentro, que es justo lo que no debe sobrevivir. Leer el estado aquí encontraba
+      // siempre un hueco y pedía un segundo factor **después** de haberlo aprobado en el teléfono.
+      const canal = await leerCanalCompletado(this.ctx, this.tenant.provider);
 
-      if (estado?.canal === 'push') {
+      if (canal === 'push') {
         return true;
       }
 
-      return estado?.canal === 'qr' && qrEsFactorUnico();
+      return canal === 'qr' && qrEsFactorUnico();
     } catch {
       // Falla cerrado: si no se puede saber de qué conector o canal viene, no se exime de nada.
       return false;
