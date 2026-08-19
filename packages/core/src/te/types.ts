@@ -119,10 +119,10 @@ export type MarcoCanal = z.infer<typeof marcoCanalGuard>;
  * cada vuelta y ningún login llegaba a completarse. El fallo era invisible en los tests porque el
  * cliente estaba simulado en el borde y el simulacro devolvía el marco desnudo.
  *
- * El `retryAfterMs` de te-api se consume aquí y no se propaga: la tabla de ritmos vive en
- * {@link ritmoSondeoMs} y es la misma en los dos lados (1500/700/0). Tener un solo sitio donde se
- * decide qué se le dice al navegador es lo que impide que las dos tablas se separen sin que nadie
- * lo note.
+ * El `retryAfterMs` de te-api **se propaga**, acotado por {@link acotarRitmoSondeo}. Antes se
+ * consumía aquí y se recalculaba con una tabla propia idéntica a la de te-api; el comentario que
+ * había en este mismo sitio avisaba de que las dos podían separarse sin que nadie lo notara. Se
+ * quitó una: la que manda es te-api, donde vive el estado y donde el número es configurable.
  */
 export const sondeoTeApiGuard = z.object({
   frame: marcoCanalGuard,
@@ -138,26 +138,28 @@ export const estadosTerminales = new Set<MarcoCanal['t']>([
 ]);
 
 /**
- * Cadencia dictada por el servidor, no por el cliente.
+ * Cadencia del sondeo: **la que dice te-api**, acotada.
  *
- * 1500 ms mientras se pinta el código: la rotación del QR es de 30 s, así que el sondeo la cubre
- * con dos órdenes de magnitud de margen. 700 ms una vez reclamado, que es cuando la persona está
- * mirando la pantalla esperando a que avance.
+ * Antes había aquí una tabla propia (1500/700/0) idéntica a la de te-api, y un comentario que
+ * avisaba de que las dos podían separarse sin que nadie lo notara. La forma de que no se separen
+ * no es tener dos y vigilarlas: es tener una. te-api la decide porque es donde vive el estado y
+ * donde el número es configurable (`TE_POLL_INTERVAL_MS`).
+ *
+ * Lo que queda aquí es la **acotación**, y no sobra: este número acaba en un `setTimeout` del
+ * navegador. Un cero o un negativo por un despliegue mal puesto convertiría el sondeo en un bucle
+ * cerrado contra el propio servidor, así que un ritmo positivo se sube al suelo de 1 s y se baja
+ * al techo de 30 s.
+ *
+ * El **cero sigue significando parar** y por eso pasa tal cual: es un estado terminal, no un
+ * ritmo, y confundirlo con «sondea muy rápido» sería justo el error que el suelo previene.
  */
-export const ritmoSondeoMs = (marco: MarcoCanal): number => {
-  switch (marco.t) {
-    case 'claimed': {
-      return 700;
-    }
-    case 'code': {
-      return 1500;
-    }
-    default: {
-      return 0;
-    }
+export const acotarRitmoSondeo = (retryAfterMs: number): number => {
+  if (!Number.isFinite(retryAfterMs) || retryAfterMs <= 0) {
+    return 0;
   }
-};
 
+  return Math.min(30_000, Math.max(1000, Math.trunc(retryAfterMs)));
+};
 /* ─────────────────────────── Canal push y dispositivos ─────────────────────── */
 
 const categoriaDispositivo = z.enum(['phone', 'tablet', 'desktop']);

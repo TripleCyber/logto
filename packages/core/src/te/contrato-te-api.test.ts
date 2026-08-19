@@ -71,9 +71,12 @@ describe('el sondeo llega envuelto', () => {
       respuestaJson({ frame: { t: 'code', code: codigo }, retryAfterMs: 1500 })
     );
 
-    const marco = await new TeApiClient(config).estadoSesionQr('sesion-1', credenciales);
+    const sondeo = await new TeApiClient(config).estadoSesionQr('sesion-1', credenciales);
 
-    expect(marco).toEqual({ t: 'code', code: codigo });
+    // El ritmo sale **con** el marco: te-api es quien lo decide y aquí ya no se
+    // recalcula. Comprobarlo es lo que impide que alguien vuelva a descartarlo y
+    // reaparezca una segunda tabla de ritmos.
+    expect(sondeo).toEqual({ frame: { t: 'code', code: codigo }, retryAfterMs: 1500 });
   });
 
   /**
@@ -95,7 +98,7 @@ describe('el sondeo llega envuelto', () => {
 
     const estado = await new TeApiClient(config).estadoPush('reto-1', 'txn-1');
 
-    expect(estado).toEqual({ frame: { t: 'approved' } });
+    expect(estado).toEqual({ frame: { t: 'approved' }, retryAfterMs: 0 });
   });
 
   it('y cuando te-api ya ha despachado, la etiqueta sale con el marco', async () => {
@@ -116,6 +119,7 @@ describe('el sondeo llega envuelto', () => {
      */
     expect(estado).toEqual({
       frame: { t: 'claimed' },
+      retryAfterMs: 700,
       despacho: { count: 1, kind: 'phone', lastSeen: 'today' },
     });
   });

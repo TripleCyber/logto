@@ -32,7 +32,7 @@ import {
   respuestaDispositivosGuard,
   respuestaSondeoGuard,
   retoPushGuard,
-  ritmoSondeoMs,
+  acotarRitmoSondeo,
   topeDispositivos,
   type DespachoTeApi,
   type MarcoCanal,
@@ -288,14 +288,12 @@ export default function teChannelRoutes<T extends ExperienceInteractionRouterCon
       const estado = await cargarEstado(ctx);
       const cliente = clienteTe(config);
 
-      const sondeo: { frame: MarcoCanal; despacho?: DespachoTeApi } =
+      const sondeo: { frame: MarcoCanal; retryAfterMs: number; despacho?: DespachoTeApi } =
         estado.canal === 'qr' && estado.sessionId
-          ? {
-              frame: await cliente.estadoSesionQr(
-                estado.sessionId,
-                credencialesDe(estado, ctx.request.headers[cabeceraVerifier]?.toString())
-              ),
-            }
+          ? await cliente.estadoSesionQr(
+              estado.sessionId,
+              credencialesDe(estado, ctx.request.headers[cabeceraVerifier]?.toString())
+            )
           : await cliente.estadoPush(exigirReto(estado), estado.txnId);
 
       const marco = sondeo.frame;
@@ -325,7 +323,7 @@ export default function teChannelRoutes<T extends ExperienceInteractionRouterCon
        */
       ctx.body = {
         frame: marco,
-        retryAfterMs: ritmoSondeoMs(marco),
+        retryAfterMs: acotarRitmoSondeo(sondeo.retryAfterMs),
         ...(sondeo.despacho ? { dispatch: enmascararDespacho(sondeo.despacho) } : {}),
       };
 
@@ -428,7 +426,13 @@ export default function teChannelRoutes<T extends ExperienceInteractionRouterCon
         throw new TeChannelError('canal push apagado en te-api');
       }
 
-      const reto = await cliente.despacharPush(estado.txnId, ctx.guard.body.deviceRef);
+      // El titular que esta interacción ya identificó. Sin él, te-api no tiene a
+      // quién avisar y el reto nace señuelo — ver `despacharPush`.
+      const reto = await cliente.despacharPush(
+        estado.txnId,
+        ctx.guard.body.deviceRef,
+        ctx.experienceInteraction.identifiedUserId
+      );
 
       await escribirEstadoCanal(ctx, provider, { ...estado, challengeId: reto.challengeId });
 
