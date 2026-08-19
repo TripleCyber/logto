@@ -10,8 +10,16 @@
  * una sola lista. El valor se copia a propósito de `MfaFactorList`: son dos
  * ficheros y separarlos con una variable compartida sería inventar una API
  * entre upstream y el parche por tres píxeles.
+ *
+ * **`stretch` no es opcional.** El valor por defecto de `flex-column` es
+ * `align-items: center`, y con él los dos hijos se encogen a su contenido: la
+ * lista por un lado y la tarjeta del push por otro. Como la descripción del
+ * push ocupa dos líneas, su ancho natural es mayor y la tarjeta salía más ancha
+ * que las de arriba — que es justo lo que este contenedor venía a evitar. Los
+ * botones ya traen `width: 100%`, así que estirando el contenedor las tres
+ * quedan del mismo ancho sin tocar nada de upstream.
  */
 .opciones {
-  @include _.flex-column;
+  @include _.flex-column(stretch);
   gap: _.unit(3);
 }

@@ -1,4 +1,4 @@
-import { MfaFactor } from '@logto/schemas';
+import { MfaFactor, type RequestErrorBody } from '@logto/schemas';
 import { act, renderHook } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
@@ -45,13 +45,19 @@ const renderHandler = () =>
     wrapper: ({ children }) => <MemoryRouter>{children}</MemoryRouter>,
   });
 
-const errorConFactores = (factors: MfaFactor[]) => ({
+const errorConFactores = (factors: MfaFactor[]): RequestErrorBody => ({
   code: 'session.mfa.require_mfa_verification',
   message: 'Mfa verification is required to sign in.',
   data: {
     availableFactors: factors,
     maskedIdentifiers: { [MfaFactor.PhoneVerificationCode]: '****3152' },
   },
+});
+
+const errorSinFactorVinculado = (): RequestErrorBody => ({
+  code: 'user.missing_mfa',
+  message: 'missing',
+  data: { availableFactors: [MfaFactor.BackupCode] },
 });
 
 describe('la verificación de segundo factor nunca decide por la persona', () => {
@@ -81,9 +87,7 @@ describe('la verificación de segundo factor nunca decide por la persona', () =>
     const handler = result.current['session.mfa.require_mfa_verification'];
 
     await act(async () => {
-      await handler?.(
-        errorConFactores([MfaFactor.PhoneVerificationCode, MfaFactor.BackupCode])
-      );
+      await handler?.(errorConFactores([MfaFactor.PhoneVerificationCode, MfaFactor.BackupCode]));
     });
 
     expect(mockedSendCode).not.toHaveBeenCalled();
@@ -100,11 +104,7 @@ describe('la verificación de segundo factor nunca decide por la persona', () =>
     const handler = result.current['user.missing_mfa'];
 
     await act(async () => {
-      await handler?.({
-        code: 'user.missing_mfa',
-        message: 'missing',
-        data: { availableFactors: [MfaFactor.BackupCode] },
-      });
+      await handler?.(errorSinFactorVinculado());
     });
 
     expect(mockedNavigate).toHaveBeenCalledWith(
