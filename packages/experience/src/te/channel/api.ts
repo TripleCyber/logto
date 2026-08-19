@@ -125,12 +125,23 @@ export const abrirCanalQr = async (channelHash: string): Promise<AperturaCanal> 
  * El identificador va **en el cuerpo**, nunca en el query: te-api sólo guarda su huella
  * (`login_hint_fp`) y Logto no lo registra en el log de auditoría. Abrir el canal no despacha
  * nada todavía; el despacho es `despacharPush`.
+ *
+ * ## Por qué aquí NO se arranca la interacción, y en el QR sí
+ *
+ * Porque arrancarla es **crear una nueva**, y eso descarta la que ya hay. El QR se abre desde la
+ * pantalla de acceso recién cargada, donde no existe ninguna, así que crearla es justo lo que hace
+ * falta. El push se abre desde la pantalla de segundo factor, donde ya existe una **con la
+ * contraseña verificada y el titular identificado dentro** — y es de ahí de donde sale el
+ * `identifiedUserId` que el despacho manda a te-api para saber a quién avisar.
+ *
+ * Llamar a `initInteraction` aquí tiraba las dos cosas. El reto nacía sin destino, te-api lo
+ * marcaba señuelo y el teléfono no sonaba jamás; el registro de auditoría lo enseñaba como un
+ * segundo «Create new sign-in interaction» justo antes de abrir el canal, con el usuario en `-`
+ * después de haberlo identificado tres segundos antes. Y por diseño (PU-4) el síntoma es
+ * indistinguible de un rechazo: dos minutos de espera y el mensaje uniforme.
  */
-export const abrirCanalPush = async (loginHint: string): Promise<AperturaCanal> => {
-  await arrancarAcceso();
-
-  return api.post(prefijo, { json: { channel: 'push', loginHint } }).json<AperturaCanal>();
-};
+export const abrirCanalPush = async (loginHint: string): Promise<AperturaCanal> =>
+  api.post(prefijo, { json: { channel: 'push', loginHint } }).json<AperturaCanal>();
 
 /** Rota el código del QR. */
 export const rotarCodigo = async (verifier: string): Promise<CodigoCanal> =>
