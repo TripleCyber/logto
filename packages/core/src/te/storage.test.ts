@@ -1,4 +1,9 @@
-import { borrarEstadoCanal, escribirEstadoCanal, leerEstadoCanal } from './storage.js';
+import {
+  borrarEstadoCanal,
+  escribirEstadoCanal,
+  leerCanalCompletado,
+  leerEstadoCanal,
+} from './storage.js';
 
 const { jest } = import.meta;
 
@@ -67,7 +72,40 @@ describe('el canal cuelga de la interacción OIDC (DS-2)', () => {
     await escribirEstadoCanal(ctx as never, provider as never, estado);
     await borrarEstadoCanal(ctx as never, provider as never);
 
-    expect(leer()).toEqual({ interactionEvent: 'SignIn', userId: 'u-1' });
+    expect(leer()).toMatchObject({ interactionEvent: 'SignIn', userId: 'u-1' });
     expect(JSON.stringify(leer())).not.toContain('secreto');
+    // Ni el secreto, ni la sesión, ni la transacción: de todo el estado sólo queda el canal.
+    expect(JSON.stringify(leer())).not.toContain('txn-1');
+    expect(JSON.stringify(leer())).not.toContain('s-1');
+    expect(await leerEstadoCanal(ctx as never, provider as never)).toBeUndefined();
+  });
+
+  /**
+   * **El hueco que rompía el acceso.** El `submit` corre después de `confirm`, y `confirm` borra el
+   * estado. `hasVerifiedTeChannel` leía el estado para saber por qué canal se entró, no lo
+   * encontraba y fallaba cerrado: pedía un segundo factor justo después de haberlo aprobado en el
+   * teléfono.
+   */
+  it('tras borrarlo sigue sabiéndose por qué canal se entró', async () => {
+    const { provider } = crearProveedor({ interactionEvent: 'SignIn', userId: 'u-1' });
+
+    await escribirEstadoCanal(ctx as never, provider as never, { ...estado, canal: 'push' });
+    await borrarEstadoCanal(ctx as never, provider as never);
+
+    expect(await leerCanalCompletado(ctx as never, provider as never)).toBe('push');
+  });
+
+  it('antes de borrarlo, el canal sale del estado vivo', async () => {
+    const { provider } = crearProveedor({ interactionEvent: 'SignIn' });
+
+    await escribirEstadoCanal(ctx as never, provider as never, estado);
+
+    expect(await leerCanalCompletado(ctx as never, provider as never)).toBe('qr');
+  });
+
+  it('sin canal ninguno, no se inventa uno', async () => {
+    const { provider } = crearProveedor({ interactionEvent: 'SignIn' });
+
+    expect(await leerCanalCompletado(ctx as never, provider as never)).toBeUndefined();
   });
 });

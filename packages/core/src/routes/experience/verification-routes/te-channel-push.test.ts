@@ -86,12 +86,17 @@ const cliente = {
     code: { codeId: 'c1', uri: 'te://c1', seq: 1, displayExpiresAt: 'a', hardExpiresAt: 'b' },
   })),
   rotarCodigo: jest.fn(),
-  estadoSesionQr: jest.fn(async () => ({ t: 'code' })),
+  estadoSesionQr: jest.fn(async () => ({ frame: { t: 'code' }, retryAfterMs: 4000 })),
   // El sondeo del push devuelve el marco **y** la etiqueta de destino. Son dos cosas y llegan
   // juntas: ver `estadoPush` en `#src/te/client.js`.
   estadoPush: jest.fn(
-    async (): Promise<{ frame: { t: string }; despacho?: Record<string, unknown> }> => ({
+    async (): Promise<{
+      frame: { t: string };
+      retryAfterMs: number;
+      despacho?: Record<string, unknown>;
+    }> => ({
       frame: { t: 'expired' },
+      retryAfterMs: 0,
     })
   ),
   confirmarSesionQr: jest.fn(async () => ({
@@ -227,7 +232,9 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
     const ctx = contexto({ body: {} });
     await handler('post', `${prefijo}/push`)(ctx, siguiente);
 
-    expect(cliente.despacharPush).toHaveBeenCalledWith('txn-1', undefined);
+    // El tercer argumento es el titular que la interacción identificó: sin él,
+    // te-api no tiene a quién avisar y el reto nace señuelo.
+    expect(cliente.despacharPush).toHaveBeenCalledWith('txn-1', undefined, undefined);
     expect(Object.keys(ctx.body as Record<string, unknown>)).toEqual([
       'challengeId',
       'expiresAt',
@@ -240,6 +247,8 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
       leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
       cliente.estadoPush.mockResolvedValue({
         frame: { t: 'claimed' },
+        // El ritmo lo dicta te-api y se propaga; aquí ya no se recalcula.
+        retryAfterMs: 4000,
         despacho: { count: 1, kind: 'tablet', lastSeen: 'this_week' },
       });
 
@@ -248,7 +257,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
 
       expect(ctx.body).toEqual({
         frame: { t: 'claimed' },
-        retryAfterMs: 700,
+        retryAfterMs: 4000,
         dispatch: { count: 1, kind: 'tablet', lastSeen: 'this_week' },
       });
     });
@@ -258,6 +267,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
       // Con abanico, te-api no manda `kind`. Que aquí se simule que sí es el punto: la
       // proyección es la segunda cerradura, y tiene que aguantar aunque el servidor cambie.
       cliente.estadoPush.mockResolvedValue({
+      retryAfterMs: 4000,
         frame: { t: 'claimed' },
         despacho: { count: 3, kind: 'phone', lastSeen: 'today' },
       });
@@ -271,6 +281,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
     it('un nombre o un modelo no llegan al navegador aunque el servidor los mande', async () => {
       leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
       cliente.estadoPush.mockResolvedValue({
+      retryAfterMs: 4000,
         frame: { t: 'claimed' },
         despacho: {
           count: 1,
@@ -295,6 +306,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
     it('un número absurdo se recorta en vez de creerse', async () => {
       leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
       cliente.estadoPush.mockResolvedValue({
+      retryAfterMs: 4000,
         frame: { t: 'claimed' },
         despacho: { count: 900 },
       });
@@ -309,7 +321,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
 
     it('mientras no se ha despachado no hay etiqueta, y la clave ni aparece', async () => {
       leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
-      cliente.estadoPush.mockResolvedValue({ frame: { t: 'claimed' } });
+      cliente.estadoPush.mockResolvedValue({ retryAfterMs: 4000, frame: { t: 'claimed' } });
 
       const ctx = contexto();
       await handler('post', `${prefijo}/poll`)(ctx, siguiente);
@@ -345,7 +357,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
 
   it('un reto caducado la desbloquea; uno aprobado no', async () => {
     leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
-    cliente.estadoPush.mockResolvedValue({ frame: { t: 'expired' } });
+    cliente.estadoPush.mockResolvedValue({ retryAfterMs: 4000, frame: { t: 'expired' } });
 
     await handler('post', `${prefijo}/poll`)(contexto(), siguiente);
 
@@ -356,7 +368,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
     );
 
     escribirEstadoCanal.mockClear();
-    cliente.estadoPush.mockResolvedValue({ frame: { t: 'approved' } });
+    cliente.estadoPush.mockResolvedValue({ retryAfterMs: 4000, frame: { t: 'approved' } });
 
     await handler('post', `${prefijo}/poll`)(contexto(), siguiente);
 
@@ -413,7 +425,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
 
     await handler('post', `${prefijo}/push`)(contexto({ body: { deviceRef: 'ref-3' } }), siguiente);
 
-    expect(cliente.despacharPush).toHaveBeenCalledWith('txn-1', 'ref-3');
+    expect(cliente.despacharPush).toHaveBeenCalledWith('txn-1', 'ref-3', undefined);
   });
 });
 
@@ -428,17 +440,20 @@ describe('sondeo', () => {
       credenciales: { channelSecret: 'sec', channelHash: huellaDe('el-verifier') },
     });
 
-    cliente.estadoSesionQr.mockResolvedValue({ t: 'code' });
+    // El ritmo lo dicta te-api y aquí sólo se acota: la tabla propia que había
+    // en Logto desapareció, así que el simulacro tiene que traerlo.
+    cliente.estadoSesionQr.mockResolvedValue({ frame: { t: 'code' }, retryAfterMs: 4000 });
     const conCodigo = contexto({ verifier: 'el-verifier' });
     await handler('post', `${prefijo}/poll`)(conCodigo, siguiente);
-    expect(conCodigo.body).toEqual({ frame: { t: 'code' }, retryAfterMs: 1500 });
+    expect(conCodigo.body).toEqual({ frame: { t: 'code' }, retryAfterMs: 4000 });
 
-    cliente.estadoSesionQr.mockResolvedValue({ t: 'claimed' });
+    cliente.estadoSesionQr.mockResolvedValue({ frame: { t: 'claimed' }, retryAfterMs: 4000 });
     const reclamado = contexto({ verifier: 'el-verifier' });
     await handler('post', `${prefijo}/poll`)(reclamado, siguiente);
-    expect(reclamado.body).toEqual({ frame: { t: 'claimed' }, retryAfterMs: 700 });
+    expect(reclamado.body).toEqual({ frame: { t: 'claimed' }, retryAfterMs: 4000 });
 
-    cliente.estadoSesionQr.mockResolvedValue({ t: 'approved' });
+    // Terminal: el cero pasa tal cual, que es la señal de parar.
+    cliente.estadoSesionQr.mockResolvedValue({ frame: { t: 'approved' }, retryAfterMs: 0 });
     const aprobado = contexto({ verifier: 'el-verifier' });
     await handler('post', `${prefijo}/poll`)(aprobado, siguiente);
     expect(aprobado.body).toEqual({ frame: { t: 'approved' }, retryAfterMs: 0 });

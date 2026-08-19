@@ -51,8 +51,26 @@ export type EstadoCanalTe = z.infer<typeof estadoCanalTeGuard>;
 
 const claveResultado = 'teChannel';
 
+/**
+ * Qué canal **completó** la ceremonia. Sobrevive al borrado del estado.
+ *
+ * Se separa en su propia clave a propósito: lo que hay que borrar en cuanto el `code` se redime es
+ * el secreto del canal, no el hecho de haber entrado por él. Guardar el estado entero para poder
+ * responder «fue push» alargaría la vida útil del secreto sin ninguna necesidad, y borrarlo entero
+ * dejaba a `hasVerifiedTeChannel` sin nada que leer — que es exactamente el fallo que esto arregla:
+ * el `submit` pedía un segundo factor **después** de haberlo completado con el teléfono.
+ *
+ * Aquí no hay nada sensible: dos valores posibles, y sólo se escribe cuando la verificación ya
+ * está hecha y verificada.
+ */
+const claveHecho = 'teChannelHecho';
+
 const resultadoConCanalGuard = z.object({
   [claveResultado]: estadoCanalTeGuard,
+});
+
+const resultadoConHechoGuard = z.object({
+  [claveHecho]: z.enum(['qr', 'push']),
 });
 
 export const leerEstadoCanal = async (
@@ -79,13 +97,44 @@ export const escribirEstadoCanal = async (
 };
 
 /**
- * Borra el estado del canal. Se llama en cuanto el `code` se ha redimido: a partir de ahí el
- * secreto del canal ya no sirve para nada y guardarlo sólo alarga su vida útil para quien logre
- * leer la sesión.
+ * Por qué canal se completó la ceremonia, mirando primero la marca que sobrevive al borrado.
+ *
+ * Se consulta en el `submit`, que corre **después** de `confirm` — o sea, después de que el estado
+ * del canal se haya borrado. Por eso la marca primero y el estado vivo como respaldo: el segundo
+ * cubre a quien pregunte antes de confirmar.
+ */
+export const leerCanalCompletado = async (
+  ctx: Context,
+  provider: Provider
+): Promise<'qr' | 'push' | undefined> => {
+  const { result } = await provider.interactionDetails(ctx.req, ctx.res);
+  const marca = resultadoConHechoGuard.safeParse(result ?? {});
+
+  if (marca.success) {
+    return marca.data[claveHecho];
+  }
+
+  const vivo = resultadoConCanalGuard.safeParse(result ?? {});
+
+  return vivo.success ? vivo.data[claveResultado].canal : undefined;
+};
+
+/**
+ * Borra el estado del canal y deja **sólo** la marca de por qué canal se entró.
+ *
+ * Se llama en cuanto el `code` se ha redimido: a partir de ahí el secreto del canal ya no sirve
+ * para nada y guardarlo sólo alarga su vida útil para quien logre leer la sesión. Lo que sí tiene
+ * que sobrevivir es el canal, porque el `submit` viene después y es donde se decide si esto exime
+ * del segundo factor (ver `hasVerifiedTeChannel`). Borrar las dos cosas juntas era la razón de que
+ * el acceso pidiera un segundo factor justo después de aprobarlo en el teléfono.
  */
 export const borrarEstadoCanal = async (ctx: Context, provider: Provider): Promise<void> => {
   const details = await provider.interactionDetails(ctx.req, ctx.res);
   const { [claveResultado]: _descartado, ...resto } = details.result ?? {};
+  const analizado = resultadoConCanalGuard.safeParse(details.result ?? {});
 
-  await provider.interactionResult(ctx.req, ctx.res, resto);
+  await provider.interactionResult(ctx.req, ctx.res, {
+    ...resto,
+    ...(analizado.success ? { [claveHecho]: analizado.data[claveResultado].canal } : {}),
+  });
 };

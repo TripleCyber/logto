@@ -3,7 +3,7 @@ import {
   estadosTerminales,
   interruptoresApagados,
   marcoCanalGuard,
-  ritmoSondeoMs,
+  acotarRitmoSondeo,
   topeDispositivos,
 } from './types.js';
 
@@ -62,15 +62,26 @@ describe('marcos y ritmo de sondeo', () => {
     expect(marcoCanalGuard.safeParse({ t: 'approved' }).success).toBe(true);
   });
 
-  it('sondea rápido cuando la persona está mirando y despacio mientras se pinta el código', () => {
-    expect(ritmoSondeoMs({ t: 'claimed' })).toBe(700);
-    expect(ritmoSondeoMs({ t: 'code' })).toBe(1500);
+  it('deja pasar el ritmo que dicta te-api', () => {
+    // La tabla propia desapareció: te-api es quien decide, y aquí sólo se acota.
+    expect(acotarRitmoSondeo(4000)).toBe(4000);
+    expect(acotarRitmoSondeo(1500)).toBe(1500);
   });
 
-  it('devuelve 0 en cualquier estado terminal, que es la señal de parar', () => {
-    for (const tipo of estadosTerminales) {
-      expect(ritmoSondeoMs(marcoCanalGuard.parse({ t: tipo }))).toBe(0);
-    }
+  it('el cero pasa tal cual: es «parar», no un ritmo', () => {
+    // Confundirlo con «sondea muy rápido» y subirlo al suelo convertiría cada
+    // estado terminal en un bucle contra el servidor.
+    expect(acotarRitmoSondeo(0)).toBe(0);
+    expect(acotarRitmoSondeo(-1)).toBe(0);
+    expect(acotarRitmoSondeo(Number.NaN)).toBe(0);
+  });
+
+  it('acota lo que llegue: este número acaba en un setTimeout del navegador', () => {
+    // Un despliegue mal puesto no puede convertir el sondeo en un bucle cerrado
+    // ni congelar la pantalla más que la propia caducidad del reto.
+    expect(acotarRitmoSondeo(1)).toBe(1000);
+    expect(acotarRitmoSondeo(999)).toBe(1000);
+    expect(acotarRitmoSondeo(120_000)).toBe(30_000);
   });
 
   it('`approved` es terminal pero no desbloquea nada: notifica, no autoriza', () => {

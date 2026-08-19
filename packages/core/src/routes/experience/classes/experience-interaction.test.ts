@@ -12,6 +12,8 @@ import {
   SignInMode,
   type User,
   VerificationType,
+  MfaPolicy,
+  MfaFactor,
 } from '@logto/schemas';
 import { createMockUtils, pickDefault } from '@logto/shared/esm';
 
@@ -753,6 +755,204 @@ describe('ExperienceInteraction class', () => {
       );
 
       await expect(experienceInteraction.guardMfaVerificationStatus()).resolves.not.toThrow();
+    });
+
+    /**
+     * LOGTO PATCH(te-channel-counts-as-mfa): aprobar en la cartera cuenta como segundo factor.
+     *
+     * Las dos mitades del contrato, y la segunda importa tanto como la primera: **sólo** el
+     * conector de la cartera exime. Un social cualquiera —«entrar con Google»— identifica pero no
+     * demuestra posesión de nada, y si esta excepción se le aplicara a todos, cualquier conector
+     * social configurado en el tenant se convertiría en una puerta trasera al segundo factor.
+     */
+    const conectorTe = { id: 'te_connector_id', target: 'tripleenable' };
+
+    /**
+     * **Con el MFA de verdad exigido.** El `mockSignInExperience` trae `factors: []`, así que
+     * `isMfaRequired` da `false` y el guard pasa haga lo que haga la excepción — una prueba montada
+     * sobre él no probaría nada. Se configura TOTP, que es lo que el usuario de prueba tiene
+     * vinculado, para que haya un segundo factor real que eximir.
+     */
+    const sieConMfa = {
+      findDefaultSignInExperience: jest.fn().mockResolvedValue({
+        ...mockSignInExperience,
+        mfa: { policy: MfaPolicy.Mandatory, factors: [MfaFactor.TOTP] },
+      }),
+      updateDefaultSignInExperience: jest.fn(),
+    };
+
+    const tenantConConector = (target: string) =>
+      new MockTenant(
+        createMockProvider(mockProviderInteractionDetails),
+        {
+          users: {
+            ...userQueries,
+            // **El usuario tiene que TENER un factor vinculado.** `mockUser` no lo tiene, así que
+            // `isMfaRequired` daba `false` y el guard pasaba siempre: las dos pruebas de abajo
+            // habrían pasado sin comprobar nada.
+            findUserById: jest.fn().mockResolvedValue(mockUserWithMfaVerifications),
+          },
+          signInExperiences: sieConMfa,
+        },
+        {
+          getLogtoConnectors: jest.fn().mockResolvedValue([
+            {
+              type: ConnectorType.Social,
+              metadata: { target },
+              dbEntry: { id: conectorTe.id, enabled: true },
+            },
+          ]),
+        },
+        {
+          users: userLibraries,
+          ssoConnectors,
+          // Sin esto, el camino de «dispositivo de confianza» satisface el MFA por su cuenta y la
+          // prueba pasa haga lo que haga la excepción de la cartera.
+          trustedDevicePolicy: {
+            getEffectivePolicy: jest.fn().mockResolvedValue({ enabled: false, durationDays: 30 }),
+          },
+        }
+      );
+
+    /**
+     * El canal por el que entró se lee del resultado de la interacción, así que el proveedor
+     * simulado tiene que devolverlo. Sin él no se exime nada — y eso también es parte del contrato:
+     * ante la duda, se pide el segundo factor.
+     *
+     * **Hay dos fases y las dos tienen que funcionar**, porque en producción sólo se llega a la
+     * segunda:
+     *
+     *  - `'vivo'`: el estado completo, tal como está entre abrir el canal y confirmarlo.
+     *  - `'confirmado'`: lo que queda **después** de `confirm`, que borra el estado para que el
+     *    secreto del canal no sobreviva a su uso y deja sólo la marca del canal.
+     *
+     * El `submit` —que es donde corre este guard— va siempre después de `confirm`, o sea que la
+     * fase real es la segunda. Probar sólo la primera daba pruebas en verde con el acceso roto:
+     * pedía un segundo factor justo después de aprobarlo en el teléfono.
+     */
+    const conVerificacionSocial = (
+      tenantDePrueba: MockTenant,
+      connectorId: string,
+      canal?: 'qr' | 'push',
+      fase: 'vivo' | 'confirmado' = 'vivo'
+    ) => {
+      const interactionDetails = {
+        result: {
+          interactionEvent: InteractionEvent.SignIn,
+          userId: mockUserWithMfaVerifications.id,
+        },
+      } as unknown as Interaction;
+      if (canal) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+        (tenantDePrueba.provider as never as {
+          interactionDetails: jest.Mock;
+        }).interactionDetails = jest.fn().mockResolvedValue({
+          result:
+            fase === 'vivo'
+              ? { teChannel: { canal, txnId: 't', verificationId: 'v', connectorId } }
+              : { teChannelHecho: canal },
+        });
+      }
+      const interaccion = new ExperienceInteraction(ctx, tenantDePrueba, interactionDetails);
+      const social = new SocialVerification(tenantDePrueba.libraries, tenantDePrueba.queries, {
+        id: 'te_verification_id',
+        type: VerificationType.Social,
+        connectorId,
+        socialUserInfo: { id: 'te_identity_id' },
+      });
+      interaccion.setVerificationRecord(social);
+      return interaccion;
+    };
+
+    it('aprobar por push cuenta como segundo factor', async () => {
+      // Para llegar al push hubo que pasar un primer factor, así que completarlo ES ser el segundo.
+      const interaccion = conVerificacionSocial(
+        tenantConConector(conectorTe.target),
+        conectorTe.id,
+        'push'
+      );
+
+      await expect(interaccion.guardMfaVerificationStatus()).resolves.not.toThrow();
+    });
+
+    it('el QR entra solo cuando está configurado como factor único (por defecto)', async () => {
+      const interaccion = conVerificacionSocial(
+        tenantConConector(conectorTe.target),
+        conectorTe.id,
+        'qr'
+      );
+
+      await expect(interaccion.guardMfaVerificationStatus()).resolves.not.toThrow();
+    });
+
+    it('con TE_QR_SINGLE_FACTOR=false el QR ya no exime, pero el push sí', async () => {
+      const previo = process.env.TE_QR_SINGLE_FACTOR;
+      process.env.TE_QR_SINGLE_FACTOR = 'false';
+
+      try {
+        const conQr = conVerificacionSocial(
+          tenantConConector(conectorTe.target),
+          conectorTe.id,
+          'qr'
+        );
+        await expect(conQr.guardMfaVerificationStatus()).rejects.toThrow();
+
+        // El push no depende de esa bandera: ahí ya hubo un primer factor.
+        const conPush = conVerificacionSocial(
+          tenantConConector(conectorTe.target),
+          conectorTe.id,
+          'push'
+        );
+        await expect(conPush.guardMfaVerificationStatus()).resolves.not.toThrow();
+      } finally {
+        process.env.TE_QR_SINGLE_FACTOR = previo;
+      }
+    });
+
+    /**
+     * **La fase que de verdad ocurre.** `confirm` borra el estado del canal antes de que el
+     * navegador llame a `submit`, así que cuando este guard corre el estado vivo ya no está. Leerlo
+     * ahí encontraba siempre un hueco, el guard fallaba cerrado y el acceso pedía un segundo factor
+     * **después** de haberlo aprobado en el teléfono.
+     *
+     * Las pruebas de arriba no lo veían porque simulaban el estado vivo, que en ese punto ya no
+     * existe.
+     */
+    it.each(['push', 'qr'] as const)(
+      'tras confirmar —con el estado ya borrado— el canal %s sigue eximiendo',
+      async (canal) => {
+        const interaccion = conVerificacionSocial(
+          tenantConConector(conectorTe.target),
+          conectorTe.id,
+          canal,
+          'confirmado'
+        );
+
+        await expect(interaccion.guardMfaVerificationStatus()).resolves.not.toThrow();
+      }
+    );
+
+    it('tras confirmar, un conector social cualquiera sigue SIN eximir', async () => {
+      // La marca sobrevive al borrado, pero no relaja la otra mitad del contrato.
+      const interaccion = conVerificacionSocial(
+        tenantConConector('google'),
+        'otro_connector_id',
+        'push',
+        'confirmado'
+      );
+
+      await expect(interaccion.guardMfaVerificationStatus()).rejects.toThrow();
+    });
+
+    it('un conector social cualquiera NO exime del segundo factor', async () => {
+      // Sin esta mitad, cualquier conector social del tenant sería una puerta trasera al MFA.
+      const interaccion = conVerificacionSocial(
+        tenantConConector('google'),
+        'otro_connector_id',
+        'qr'
+      );
+
+      await expect(interaccion.guardMfaVerificationStatus()).rejects.toThrow();
     });
   });
 });

@@ -14,6 +14,8 @@ import { maskEmail, maskPhone } from '@logto/shared';
 import { conditional, trySafe } from '@silverhand/essentials';
 
 import { EnvSet } from '#src/env-set/index.js';
+import { objetivoConectorTe, qrEsFactorUnico } from '#src/te/config.js';
+import { leerCanalCompletado } from '#src/te/storage.js';
 import RequestError from '#src/errors/RequestError/index.js';
 import { buildUserPasswordPayload } from '#src/libraries/user.utils.js';
 import { type LogEntry } from '#src/middleware/koa-audit-log.js';
@@ -388,7 +390,11 @@ export default class ExperienceInteraction {
    */
 
   public async guardMfaVerificationStatus(log?: LogEntry) {
-    if (this.hasVerifiedSsoIdentity || this.hasVerifiedSignInPasskey) {
+    if (
+      this.hasVerifiedSsoIdentity ||
+      this.hasVerifiedSignInPasskey ||
+      (await this.hasVerifiedTeChannel())
+    ) {
       return;
     }
 
@@ -873,6 +879,79 @@ export default class ExperienceInteraction {
     const ssoVerificationRecord = this.verificationRecords.get(VerificationType.EnterpriseSso);
 
     return Boolean(ssoVerificationRecord?.isVerified);
+  }
+
+  /**
+   * LOGTO PATCH(te-channel-counts-as-mfa): una aprobación en la cartera cuenta como verificación
+   * multifactor, igual que el SSO empresarial y el passkey.
+   *
+   * No es una excepción de conveniencia. Aprobar en la cartera exige **tres** cosas a la vez: la
+   * clave privada del aparato enrolado (posesión), la biometría del propio aparato (inherencia) y
+   * teclear un número que sólo se ve en la OTRA pantalla —el ordenador que pide entrar—, que es lo
+   * que cierra el phishing. Eso es más de lo que aporta un TOTP, que es un secreto compartido que
+   * se puede leer por encima del hombro.
+   *
+   * Logto la clasifica como social porque llega por un conector social, y para un social genérico
+   * —«entrar con Google»— la clasificación es correcta: identifica, pero no demuestra posesión de
+   * nada del titular. Este conector no es genérico, y por eso se distingue por su `target`.
+   *
+   * Sirve para los dos canales, que es lo que la hace pequeña:
+   *
+   *  - **QR**, al principio: la cartera trae la identidad y la prueba a la vez, así que no hay un
+   *    primer factor que completar. Es la forma de un passkey y se trata igual.
+   *  - **Push**, en la pantalla de segundo factor: ahí ya hubo un primer factor —contraseña o
+   *    código— y esto lo completa.
+   *
+   * Upstream: (only SSO and passkey skip MFA)
+   */
+  private async hasVerifiedTeChannel() {
+    const social = this.verificationRecords.get(VerificationType.Social);
+
+    if (!social?.isVerified) {
+      return false;
+    }
+
+    try {
+      // Se compara el **objetivo** del conector, no su identificador: el id lo genera cada
+      // despliegue y el objetivo es el nombre estable con el que se registra la cartera. Sale de
+      // `TE_CONNECTOR_TARGET`, por si mañana se registra con otro nombre.
+      //
+      // No se usa `resolverConectorTe` a propósito, aunque exista: ésa además comprueba que el
+      // conector esté habilitado para iniciar sesión, que es una precondición de las RUTAS del
+      // canal. Aquí ya hay una verificación hecha y verificada — preguntar otra vez si el conector
+      // estaba habilitado sólo añade formas de fallar a una comprobación que debe ser simple.
+      const conectores = await this.tenant.connectors.getLogtoConnectors();
+      const conector = conectores.find(({ dbEntry }) => dbEntry.id === social.connectorId);
+
+      if (conector?.metadata.target !== objetivoConectorTe) {
+        return false;
+      }
+
+      // **Y por qué canal entró**, que es lo que decide si esto exime.
+      //
+      // El push siempre exime: para llegar a él hubo que pasar un primer factor, así que
+      // completarlo es literalmente ser el segundo. El QR exime **según configuración**
+      // (`TE_QR_SINGLE_FACTOR`, `true` por defecto), porque ahí no hubo primer factor — el QR es
+      // la puerta entera, y si eso basta o no es una decisión de negocio y no de ingeniería.
+      //
+      // Sin canal no se exime: es el caso de un social que no es el nuestro pero comparte objetivo
+      // por accidente, y ante la duda se pide el segundo factor.
+      //
+      // Se lee la **marca** que deja `borrarEstadoCanal`, no el estado vivo. Esto corre en el
+      // `submit`, que va después de `confirm`, y `confirm` borra el estado — con el secreto del
+      // canal dentro, que es justo lo que no debe sobrevivir. Leer el estado aquí encontraba
+      // siempre un hueco y pedía un segundo factor **después** de haberlo aprobado en el teléfono.
+      const canal = await leerCanalCompletado(this.ctx, this.tenant.provider);
+
+      if (canal === 'push') {
+        return true;
+      }
+
+      return canal === 'qr' && qrEsFactorUnico();
+    } catch {
+      // Falla cerrado: si no se puede saber de qué conector o canal viene, no se exime de nada.
+      return false;
+    }
   }
 
   private get hasVerifiedSocialIdentity() {

@@ -1,4 +1,4 @@
-import { MfaFactor, SignInIdentifier, type RequestErrorBody } from '@logto/schemas';
+import { MfaFactor, type RequestErrorBody } from '@logto/schemas';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { validate } from 'superstruct';
@@ -9,7 +9,6 @@ import { type MfaFlowState, mfaErrorDataGuard } from '@/types/guard';
 import { isNativeWebview } from '@/utils/native-sdk';
 
 import type { ErrorHandlers } from './use-error-handler';
-import useSendMfaVerificationCode from './use-send-mfa-verification-code';
 import useStartBackupCodeBinding from './use-start-backup-code-binding';
 import useStartTotpBinding from './use-start-totp-binding';
 import useStartWebAuthnProcessing from './use-start-webauthn-processing';
@@ -27,7 +26,6 @@ const useMfaErrorHandler = ({ replace }: Options = {}) => {
   const startTotpBinding = useStartTotpBinding();
   const startWebAuthnProcessing = useStartWebAuthnProcessing();
   const startBackupCodeBinding = useStartBackupCodeBinding();
-  const { onSubmit: startMfaVerificationCodeProcessing } = useSendMfaVerificationCode({ replace });
 
   /**
    * Redirect the user to the corresponding MFA page.
@@ -41,16 +39,41 @@ const useMfaErrorHandler = ({ replace }: Options = {}) => {
    * - /{@link UserMfaFlow.MfaVerification}/{@link MfaFactor} Verification page for the specific factor.
    *
    * Redirection rules:
+   * - Verification: always redirect to the available factors list page (see the patch below).
    * - If there is only one available factor, redirect to the specific MFA factor page.
    * - If there are multiple available factors:
    *    - Binding: redirect to the available factors list page.
-   *    - Verification: redirect to the last used specific factor page.
    */
   const handleMfaRedirect = useCallback(
     async (flow: UserMfaFlow, state: MfaFlowState) => {
       const { availableFactors } = state;
 
-      if (availableFactors.length > 1 && flow === UserMfaFlow.MfaBinding) {
+      /*
+       * LOGTO PATCH(te-push-as-mfa): la verificación siempre pasa por la lista.
+       *
+       * Upstream saltaba directo al primer factor —el último usado— y con un teléfono vinculado
+       * eso significa **mandar un SMS sin haberlo pedido**: se paga, llega a alguien que quizá
+       * iba a entrar por otro sitio, y no hubo ninguna elección. Quien acaba de teclear su
+       * contraseña tiene derecho a elegir con qué sigue.
+       *
+       * Y es además la única forma de que «aprobar en el teléfono» sea elegible: la tarjeta no es
+       * un `MfaFactor` —ver `TePushMfaCard`— así que vive en la pantalla de la lista, y a esa
+       * pantalla no se llegaba nunca cuando había un solo factor vinculado.
+       *
+       * La vinculación no se toca: ahí no se manda nada al saltar, y con un solo factor la lista
+       * sería una pantalla de un botón.
+       *
+       * Upstream: (verification jumps straight to the last used factor)
+       */
+      if (flow === UserMfaFlow.MfaVerification) {
+        navigate({ pathname: `/${flow}` }, { replace, state });
+        return;
+      }
+
+      // De aquí abajo el flujo es SIEMPRE la vinculación: la verificación salió arriba. Las
+      // comprobaciones de `flow` que había en cada rama sobran, y dejarlas puestas las marca el
+      // compilador como comparaciones sin solapamiento.
+      if (availableFactors.length > 1) {
         /**
          * Redirect to the MFA binding page if there are multiple available factors.
          */
@@ -59,8 +82,8 @@ const useMfaErrorHandler = ({ replace }: Options = {}) => {
       }
 
       /**
-       * For verification: the first available factor is the last used factor which is guaranteed by the backend.
-       * For binding: the first available factor is the only available factor since we handle the multiple factors case above.
+       * The first available factor is the only available factor since we handle the multiple
+       * factors case above.
        */
       const factor = availableFactors[0];
 
@@ -72,7 +95,7 @@ const useMfaErrorHandler = ({ replace }: Options = {}) => {
         return;
       }
 
-      if (factor === MfaFactor.TOTP && flow === UserMfaFlow.MfaBinding) {
+      if (factor === MfaFactor.TOTP) {
         /**
          * Start TOTP binding process if only TOTP is available.
          */
@@ -86,28 +109,18 @@ const useMfaErrorHandler = ({ replace }: Options = {}) => {
         return startWebAuthnProcessing(flow, state, replace);
       }
 
-      if (factor === MfaFactor.EmailVerificationCode && flow === UserMfaFlow.MfaVerification) {
-        return startMfaVerificationCodeProcessing(SignInIdentifier.Email, state);
-      }
-
-      if (factor === MfaFactor.PhoneVerificationCode && flow === UserMfaFlow.MfaVerification) {
-        return startMfaVerificationCodeProcessing(SignInIdentifier.Phone, state);
-      }
+      /*
+       * LOGTO PATCH(te-push-as-mfa): aquí vivían las dos ramas que mandaban el código por correo
+       * o por SMS **sin preguntar**. Ya no hacen falta: el envío lo dispara `MfaFactorList` al
+       * pulsar la tarjeta, que es donde alguien lo ha pedido. Ver `handleSelectFactor`.
+       */
 
       /**
        * Redirect to the specific MFA factor page.
        */
       navigate({ pathname: `/${flow}/${factor}` }, { replace, state });
     },
-    [
-      navigate,
-      replace,
-      setToast,
-      startMfaVerificationCodeProcessing,
-      startTotpBinding,
-      startWebAuthnProcessing,
-      t,
-    ]
+    [navigate, replace, setToast, startTotpBinding, startWebAuthnProcessing, t]
   );
 
   const handleMfaError = useCallback(

@@ -245,7 +245,7 @@ describe('C2 · tras el identificador se ofrecen los dos métodos', () => {
     sessionStorage.clear();
   });
 
-  it('con identificador, la pantalla de métodos ofrece entrar por QR y por push', async () => {
+  it('con identificador, la pantalla de métodos ofrece entrar por QR', async () => {
     tecleaIdentificador();
 
     const { findByText } = render(<SignInVerificationMethods />, {
@@ -254,7 +254,25 @@ describe('C2 · tras el identificador se ofrecen los dos métodos', () => {
     });
 
     await expect(findByText('te.method.qr_title')).resolves.not.toBeNull();
-    await expect(findByText('te.method.push_title')).resolves.not.toBeNull();
+  });
+
+  it('el push NO se ofrece aquí: esta pantalla va antes de identificar a nadie', async () => {
+    // Ofrecerlo era una trampa comprobada: la interacción todavía no tiene
+    // titular, el despacho sale sin él y el reto nace señuelo —`te-api` lo
+    // anota como `logto_no_dice_titular`—. El teléfono no suena nunca y, por
+    // PU-4, eso se ve igual que un rechazo: dos minutos de espera y el mensaje
+    // uniforme. El push vive en la pantalla de segundo factor.
+    tecleaIdentificador();
+
+    const { findByText, queryByText } = render(<SignInVerificationMethods />, {
+      platform: 'web',
+      ruta: '/sign-in/verification-methods',
+    });
+
+    // Se espera a que la pantalla esté pintada antes de afirmar la ausencia:
+    // si no, esto pasaría también con la pantalla todavía vacía.
+    await expect(findByText('te.method.qr_title')).resolves.not.toBeNull();
+    expect(queryByText('te.method.push_title')).toBeNull();
   });
 
   it('los métodos nativos siguen ahí: las tarjetas de TripleEnable se suman, no sustituyen', async () => {

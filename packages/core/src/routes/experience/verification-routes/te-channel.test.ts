@@ -91,7 +91,7 @@ const cliente = {
     code: { codeId: 'c1', uri: 'te://c1', seq: 1, displayExpiresAt: 'a', hardExpiresAt: 'b' },
   })),
   rotarCodigo: jest.fn(),
-  estadoSesionQr: jest.fn(async () => ({ t: 'code' })),
+  estadoSesionQr: jest.fn(async () => ({ frame: { t: 'code' }, retryAfterMs: 4000 })),
   estadoPush: jest.fn(async () => ({ t: 'expired' })),
   confirmarSesionQr: jest.fn(async () => ({
     redirectTo: 'https://logto.test/callback/conector-te?code=el-code-secreto&state=st-1',

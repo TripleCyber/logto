@@ -179,13 +179,25 @@ export class TeApiClient {
     );
   }
 
-  async estadoSesionQr(sessionId: string, credenciales: CredencialesCanal): Promise<MarcoCanal> {
-    const { frame } = await this.#llamar(
+  /**
+   * El sondeo del QR, con **el ritmo que dicta te-api**.
+   *
+   * `retryAfterMs` ya no se descarta. Había dos tablas de ritmos idénticas —una aquí y otra en
+   * te-api, las dos con 1500/700/0— y el propio comentario avisaba del riesgo de que se
+   * separaran. La forma de que no se separen no es tener dos y vigilarlas: es tener una. te-api
+   * es la que manda porque es donde vive el estado y donde el número es configurable
+   * (`TE_POLL_INTERVAL_MS`).
+   */
+  async estadoSesionQr(
+    sessionId: string,
+    credenciales: CredencialesCanal
+  ): Promise<{ frame: MarcoCanal; retryAfterMs: number }> {
+    const { frame, retryAfterMs } = await this.#llamar(
       { metodo: 'POST', ruta: `${rutas.sesionQr(sessionId)}/state`, cuerpo: credenciales },
       sondeoTeApiGuard
     );
 
-    return frame;
+    return { frame, retryAfterMs };
   }
 
   /**
@@ -199,13 +211,30 @@ export class TeApiClient {
     );
   }
 
-  /** Despacha el push. Sin `deviceRef`, te-api elige el dispositivo elegible más reciente. */
-  async despacharPush(txnId: string, deviceReference?: string) {
+  /**
+   * Despacha el push. Sin `deviceRef`, te-api elige el dispositivo elegible más reciente.
+   *
+   * **`logtoUserId` es lo que hace que el aviso llegue a alguien.** te-api saca a quién notificar
+   * del `login_hint` de `/authorize`, congelado al crear la transacción — y la mayoría de las
+   * aplicaciones no lo mandan, porque en ese momento todavía no saben quién eres. La persona se
+   * identifica **aquí**, en la experiencia, y hasta ahora esa identidad no volvía nunca a te-api:
+   * el reto nacía sin destino, se marcaba señuelo y el teléfono no sonaba jamás. Sin un solo
+   * error por ninguna parte, porque un señuelo es indistinguible de un despacho real por diseño.
+   *
+   * Va el identificador de Logto y no el correo con el que la persona entró: te-api sólo resuelve
+   * identificadores de su propio dominio, así que un correo externo no le sirve de nada. Logto es
+   * quien conoce la equivalencia «esta persona ↔ este titular» y el único que puede afirmarla.
+   */
+  async despacharPush(txnId: string, deviceReference?: string, logtoUserId?: string) {
     return this.#llamar(
       {
         metodo: 'POST',
         ruta: rutas.retosPush,
-        cuerpo: { txnId, ...(deviceReference === undefined ? {} : { deviceRef: deviceReference }) },
+        cuerpo: {
+          txnId,
+          ...(deviceReference === undefined ? {} : { deviceRef: deviceReference }),
+          ...(logtoUserId === undefined ? {} : { logtoUserId }),
+        },
       },
       retoPushGuard
     );
@@ -222,8 +251,8 @@ export class TeApiClient {
   async estadoPush(
     challengeId: string,
     txnId: string
-  ): Promise<{ frame: MarcoCanal; despacho?: DespachoTeApi }> {
-    const { frame, dispatch } = await this.#llamar(
+  ): Promise<{ frame: MarcoCanal; retryAfterMs: number; despacho?: DespachoTeApi }> {
+    const { frame, dispatch, retryAfterMs } = await this.#llamar(
       { metodo: 'POST', ruta: `${rutas.retoPush(challengeId)}/state`, cuerpo: { txnId } },
       sondeoPushTeApiGuard
     );
@@ -231,7 +260,7 @@ export class TeApiClient {
     // Sale tal cual llegó. Quien lo recorta es la ruta, con `enmascararDespacho`, en el mismo
     // sitio y por la misma razón que recorta la lista de dispositivos: la frontera hacia el
     // navegador es una sola y está donde se escribe `ctx.body`.
-    return { frame, ...(dispatch ? { despacho: dispatch } : {}) };
+    return { frame, retryAfterMs, ...(dispatch ? { despacho: dispatch } : {}) };
   }
 
   /** Igual que {@link confirmarSesionQr}: el `code` se queda en este servidor. */
