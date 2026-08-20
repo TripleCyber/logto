@@ -7,10 +7,8 @@ import { WorkerThreadScriptRunner } from './worker-thread-script-runner.js';
  * The resource budget applied to every script run on the worker thread runner.
  *
  * The wall clock is a real bound: it covers the whole run, including asynchronous work and worker
- * startup, and the host terminates the thread on breach. The local VM it replaces only bounded
- * synchronous execution (3 seconds up to the first `await`), so an async script used to run
- * unbounded — a `fetch`-heavy script slower than this deadline now fails instead of hanging token
- * issuance forever.
+ * startup, and the host terminates the thread on breach. A `fetch`-heavy script slower than this
+ * deadline fails instead of hanging token issuance forever.
  *
  * `memoryMb` matches the Cloud per-isolate budget. On worker threads it caps the V8 old space
  * only, and a process-global `--max-old-space-size` overrides it — the wall clock is the bound
@@ -33,10 +31,9 @@ const sharedRunner = new WorkerThreadScriptRunner();
 /**
  * Run a user script on the shared worker pool with the standard OSS limits.
  *
- * Reachable only when `EnvSet.values.isCloud` is `false` (Cloud runs scripts remotely) and, until
- * the runner is manually verified and released, behind `isDevFeaturesEnabled` — production keeps
- * the legacy `node:vm` path. The payload must be structured-cloneable — capability APIs such as
- * `api.denyAccess` are injected by the worker and must not be part of it.
+ * Reachable only when `EnvSet.values.isCloud` is `false` — Cloud runs scripts remotely. The
+ * payload must be structured-cloneable: capability APIs such as `api.denyAccess` are injected by
+ * the worker and must not be part of it.
  */
 export const runScriptOnWorkerPool = async ({
   tenantId,

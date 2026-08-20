@@ -1,28 +1,19 @@
 import { UserScope } from '@logto/core-kit';
-import {
-  AccountCenterControlValue,
-  getCimdCapableUserApplicationGrantsResponseGuard,
-  getUserApplicationGrantsResponseGuard,
-} from '@logto/schemas';
+import { AccountCenterControlValue, getUserApplicationGrantsResponseGuard } from '@logto/schemas';
 import { trySafe } from '@silverhand/essentials';
 import { z } from 'zod';
 
-import { EnvSet } from '#src/env-set/index.js';
 import RequestError from '#src/errors/RequestError/index.js';
 import koaGuard from '#src/middleware/koa-guard.js';
+import { assertFirstPartyClient } from '#src/utils/assert-first-party-client.js';
 import assertThat from '#src/utils/assert-that.js';
 
 import { type UserRouter, type RouterInitArgs } from '../types.js';
 
 import { accountApiPrefix } from './constants.js';
 
-// DEV: CIMD (client ID metadata document) support
-const grantsResponseGuard = EnvSet.values.isDevFeaturesEnabled
-  ? getCimdCapableUserApplicationGrantsResponseGuard
-  : getUserApplicationGrantsResponseGuard;
-
 export default function accountGrantRoutes<T extends UserRouter>(
-  ...[router, { provider, libraries }]: RouterInitArgs<T>
+  ...[router, { provider, libraries, queries }]: RouterInitArgs<T>
 ) {
   const { session: sessionLibrary } = libraries;
 
@@ -33,7 +24,7 @@ export default function accountGrantRoutes<T extends UserRouter>(
         appType: z.enum(['firstParty', 'thirdParty']).optional(),
       }),
       status: [200, 400, 401, 500],
-      response: grantsResponseGuard,
+      response: getUserApplicationGrantsResponseGuard,
     }),
     async (ctx, next) => {
       const { id: userId, scopes, identityVerified } = ctx.auth;
@@ -72,13 +63,13 @@ export default function accountGrantRoutes<T extends UserRouter>(
       params: z.object({
         grantId: z.string().min(1),
       }),
-      status: [204, 400, 401, 404, 500],
+      status: [204, 400, 401, 403, 404, 500],
     }),
     async (ctx, next) => {
       const {
         params: { grantId },
       } = ctx.guard;
-      const { id: userId, scopes, identityVerified } = ctx.auth;
+      const { id: userId, scopes, identityVerified, clientId } = ctx.auth;
       const { fields } = ctx.accountCenter;
 
       assertThat(
@@ -95,6 +86,8 @@ export default function accountGrantRoutes<T extends UserRouter>(
         scopes.has(UserScope.Sessions),
         new RequestError({ code: 'auth.unauthorized', status: 401 })
       );
+
+      await assertFirstPartyClient(queries, clientId);
 
       await sessionLibrary.revokeUserGrantById(provider, userId, grantId);
       await trySafe(

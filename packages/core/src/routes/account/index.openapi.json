@@ -19,8 +19,7 @@
                 "schema": {
                   "properties": {
                     "cimdClientId": {
-                      "description": "Dev feature. The identifier of the CIMD (client ID metadata document) client from the user's first consent. `null` unless the user's first consent was granted to a CIMD client. Mutually exclusive with `applicationId`. Only returned with the `profile` scope.",
-                      "x-logto-dev-feature": true
+                      "description": "The identifier of the CIMD (client ID metadata document) client from the user's first consent. `null` unless the user's first consent was granted to a CIMD client. Mutually exclusive with `applicationId`. Only returned with the `profile` scope."
                     }
                   }
                 }
@@ -64,8 +63,7 @@
                 "schema": {
                   "properties": {
                     "cimdClientId": {
-                      "description": "Dev feature. The identifier of the CIMD (client ID metadata document) client from the user's first consent. `null` unless the user's first consent was granted to a CIMD client. Mutually exclusive with `applicationId`. Only returned with the `profile` scope.",
-                      "x-logto-dev-feature": true
+                      "description": "The identifier of the CIMD (client ID metadata document) client from the user's first consent. `null` unless the user's first consent was granted to a CIMD client. Mutually exclusive with `applicationId`. Only returned with the `profile` scope."
                     }
                   }
                 }
@@ -294,7 +292,7 @@
             "description": "The new verification record is invalid."
           },
           "403": {
-            "description": "Permission denied, the verification record is invalid."
+            "description": "Permission denied, the application is a third-party application. The Account API only accepts mutations from first-party applications."
           }
         }
       },
@@ -344,7 +342,7 @@
             "description": "The new verification record is invalid."
           },
           "403": {
-            "description": "Permission denied, the verification record is invalid."
+            "description": "Permission denied, the application is a third-party application. The Account API only accepts mutations from first-party applications."
           }
         }
       },
@@ -783,6 +781,47 @@
         }
       }
     },
+    "/api/my-account/trusted-devices": {
+      "get": {
+        "tags": ["Dev feature"],
+        "operationId": "GetTrustedDevices",
+        "summary": "Get trusted devices",
+        "description": "Retrieve a paginated list of active trusted devices for the signed-in user. A logto-verification-id in header and the trusted-devices scope are required. Each entry includes isCurrent, which is true only when the browser's trusted-device cookie passes full credential validation for that record.",
+        "responses": {
+          "200": {
+            "description": "A paginated list of the signed-in user's active trusted devices."
+          },
+          "401": {
+            "description": "Permission denied, the verification record is invalid or the access token does not include the trusted-devices scope."
+          }
+        }
+      }
+    },
+    "/api/my-account/trusted-devices/{trustedDeviceId}": {
+      "delete": {
+        "tags": ["Dev feature"],
+        "operationId": "DeleteTrustedDeviceById",
+        "summary": "Delete a trusted device",
+        "description": "Delete a trusted device owned by the signed-in user. Deleting the current trusted device clears its cookie without ending the login session.",
+        "responses": {
+          "204": {
+            "description": "The trusted device was deleted successfully."
+          },
+          "400": {
+            "description": "The field is not editable."
+          },
+          "401": {
+            "description": "Permission denied, the verification record is invalid or the access token does not include the trusted-devices scope."
+          },
+          "403": {
+            "description": "The request was made by a third-party application."
+          },
+          "404": {
+            "description": "The trusted device was not found or does not belong to the signed-in user."
+          }
+        }
+      }
+    },
     "/api/my-account/user-assets/avatar": {
       "post": {
         "operationId": "UploadAccountAvatar",
@@ -812,7 +851,7 @@
             "description": "Permission denied, the access token does not include the `profile` scope."
           },
           "403": {
-            "description": "Permission denied for the current account center state."
+            "description": "Permission denied, the application is a third-party application."
           },
           "500": {
             "description": "Failed to upload the file to the storage provider."

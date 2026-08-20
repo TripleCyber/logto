@@ -71,6 +71,30 @@ const mfa = {
   no_sms_connector_error:
     'Não é possível habilitar MFA com código de verificação SMS sem um conector SMS. Por favor, configure primeiro um conector SMS.',
   setup_link: 'Configurar',
+  trusted_device: {
+    title: 'Dispositivos confiáveis',
+    description:
+      'Permita que navegadores confiáveis concluam automaticamente a verificação de MFA quando o fluxo de MFA atual exigir.',
+    enable_title: 'Habilitar dispositivos confiáveis',
+    enable_description: 'Permita confiar neste navegador após concluir um fator de MFA elegível.',
+    duration_title: 'Duração da confiança (dias)',
+    duration_error: 'Insira um número inteiro entre {{min}} e {{max}}.',
+    duration_note: 'As alterações de duração valem apenas para dispositivos confiados depois.',
+    organization_allow_title: 'Permitir dispositivos confiáveis',
+    organization_allow_tip:
+      'Uma organização só pode restringir a política do tenant e não pode habilitá-la quando estiver desativada globalmente.',
+    organization_allow_description:
+      'Permita a verificação por dispositivo confiável aos membros desta organização.',
+    organization_global_disabled:
+      'Primeiro habilite dispositivos confiáveis nas configurações de MFA do tenant.',
+    management_description:
+      'Gerencie os navegadores em que este usuário confiou após concluir a MFA. Ao remover um deles, esse navegador exigirá MFA novamente no próximo login.',
+    management_hint: 'A localização mais recente é apenas informativa.',
+    management_empty: 'Este usuário não tem dispositivos confiáveis ativos.',
+    management_deletion_confirmation:
+      'Remover {{name}}? Este navegador exigirá MFA novamente no próximo login.',
+    management_removed: 'Dispositivo confiável removido.',
+  },
 };
 
 export default Object.freeze(mfa);
