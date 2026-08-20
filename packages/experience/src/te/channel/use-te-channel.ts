@@ -28,6 +28,7 @@ import {
   type EstadoCanal,
 } from './machine';
 import { comoTexto, numeroDeEmparejamiento } from './pairing';
+import useEventos from './use-eventos';
 import useIsMounted from './use-is-mounted';
 import useRotacion from './use-rotacion';
 import useSondeo from './use-sondeo';
@@ -334,6 +335,21 @@ const useTeChannel = ({ canal }: Opciones) => {
 
     return respuesta.retryAfterMs > 0 ? respuesta.retryAfterMs : undefined;
   }, [canal, fijarEstado, redimir]);
+
+  /*
+   * LOGTO PATCH(te-senalizacion): el aviso en tiempo real dispara **un sondeo**, no un estado.
+   *
+   * Lo que llega por el canal de eventos es «ve a preguntar». Quien contesta sigue siendo el
+   * servidor, por el mismo camino de siempre, así que la máquina de estados no se entera de que
+   * este canal existe. Si el aviso no llega —Redis caído, proxy que corta, pestaña dormida— el
+   * sondeo sigue en su ritmo y la ceremonia funciona igual que antes.
+   *
+   * Está activo mientras haya una ceremonia viva y no en los estados terminales: avisar sobre algo
+   * que ya terminó no tiene a quién despertar.
+   */
+  useEventos(sondeoActivo.current !== 0, () => {
+    void unaVuelta();
+  });
 
   /** Ver `use-sondeo.ts`: la cadena de vueltas, y por qué se cancela por generación. */
   const arrancarSondeo = useSondeo({

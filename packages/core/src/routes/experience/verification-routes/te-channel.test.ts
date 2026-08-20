@@ -261,7 +261,14 @@ describe('registro de rutas', () => {
   it('expone exactamente las rutas del contrato', () => {
     const router = registrar();
 
-    expect(router.get.mock.calls.map(([ruta]) => ruta)).toEqual([`${prefijo}/config`]);
+    // `/events` es el aviso en tiempo real (`te-channel-eventos.ts`). Se registra
+    // desde este mismo módulo a propósito: la superficie del canal se lee entera
+    // aquí, y una ruta que se registre por su cuenta en otro sitio es una ruta
+    // que este test deja de vigilar.
+    expect(router.get.mock.calls.map(([ruta]) => ruta)).toEqual([
+      `${prefijo}/events`,
+      `${prefijo}/config`,
+    ]);
     expect(router.post.mock.calls.map(([ruta]) => ruta)).toEqual([
       prefijo,
       `${prefijo}/code`,

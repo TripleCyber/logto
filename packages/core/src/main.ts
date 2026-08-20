@@ -9,6 +9,7 @@ import { redisCache } from './caches/index.js';
 import { EnvSet } from './env-set/index.js';
 import { checkPreconditions } from './env-set/preconditions.js';
 import initI18n from './i18n/init.js';
+import { arrancarEventosTe } from './te/eventos.js';
 import SystemContext from './tenants/SystemContext.js';
 import { tenantPool } from './tenants/index.js';
 import { loadConnectorFactories } from './utils/connectors/index.js';
@@ -29,6 +30,9 @@ try {
   await Promise.all([
     initI18n(),
     redisCache.connect(),
+    // LOGTO PATCH(te-senalizacion): el timbre de te-api. Nunca lanza — sin él el
+    // sondeo de respaldo del navegador sigue funcionando igual que antes.
+    arrancarEventosTe(),
     loadConnectorFactories(),
     checkPreconditions(sharedAdminPool),
     SystemContext.shared.loadProviderConfigs(sharedAdminPool),

@@ -1,8 +1,8 @@
 import useNavigateWithPreservedSearchParams from '@/hooks/use-navigate-with-preserved-search-params';
 import VerificationMethodCard from '@/pages/SignInVerificationMethods/VerificationMethodCard';
 
-import { rutasTe } from '../config';
 import TeMark from '../TeMethodCards/TeMark';
+import { rutasTe } from '../config';
 import useTeAvailability from '../use-te-availability';
 
 /**
