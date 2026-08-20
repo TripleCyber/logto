@@ -123,15 +123,23 @@ export const arrancarEventosTe = async (): Promise<void> => {
 };
 
 /**
- * `true` si el timbre está sonando ahora mismo.
+ * En qué estado quedó la suscripción, para la línea de arranque.
  *
- * Sin usar todavía: la ruta SSE no lo necesita porque `alMorirEventosTe` ya la
- * avisa cuando la suscripción cae. Se deja anotado aquí porque es lo que hará
- * falta el día que haya un `/health` que quiera decir si el tiempo real está
- * disponible, y escribirlo entonces sería reescribir esto.
+ * «Funciona pero sin timbre» es indistinguible de «funciona» desde fuera: el
+ * navegador sondea igual y la ceremonia termina igual, sólo que cuatro segundos
+ * más tarde — y para siempre. Sin esta línea, una URL mal puesta se descubre
+ * dentro de un mes o nunca.
+ *
+ * Tres estados y no dos, porque significan cosas distintas: no configurado es
+ * una decisión de despliegue legítima; configurado y mudo es un error de hoy.
  */
-const eventosTeVivos = (): boolean => estado.vivo;
-void eventosTeVivos;
+export const describirEventosTe = (): string => {
+  if (!EnvSet.values.redisUrl) {
+    return 'no configurado';
+  }
+
+  return estado.vivo ? 'conectado' : 'CONFIGURADO PERO NO RESPONDE';
+};
 
 /** Escucha los eventos de un reto. Devuelve cómo dejar de escuchar. */
 export const escucharReto = (id: string, oyente: Oyente): (() => void) => {
