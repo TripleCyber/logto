@@ -9,6 +9,7 @@ import { redisCache } from './caches/index.js';
 import { EnvSet } from './env-set/index.js';
 import { checkPreconditions } from './env-set/preconditions.js';
 import initI18n from './i18n/init.js';
+import { arrancarEventosTe, describirEventosTe } from './te/eventos.js';
 import SystemContext from './tenants/SystemContext.js';
 import { tenantPool } from './tenants/index.js';
 import { loadConnectorFactories } from './utils/connectors/index.js';
@@ -29,6 +30,17 @@ try {
   await Promise.all([
     initI18n(),
     redisCache.connect(),
+    // LOGTO PATCH(te-senalizacion): el timbre de te-api. Nunca lanza — sin él el
+    // sondeo de respaldo del navegador sigue funcionando igual que antes.
+    //
+    // Y **se registra en qué estado quedó**, porque «funciona pero sin timbre»
+    // es indistinguible de «funciona» desde fuera: el navegador sondea igual y
+    // la ceremonia termina igual, sólo que cuatro segundos más tarde y para
+    // siempre. Tres estados, no dos: no configurado es una decisión de
+    // despliegue legítima; configurado y mudo es un error que hay que ver hoy.
+    arrancarEventosTe().then(() => {
+      consoleLog.info(`te: señalización en tiempo real → ${describirEventosTe()}`);
+    }),
     loadConnectorFactories(),
     checkPreconditions(sharedAdminPool),
     SystemContext.shared.loadProviderConfigs(sharedAdminPool),

@@ -44,6 +44,8 @@ import { experienceRoutes } from '../const.js';
 import koaExperienceVerificationsAuditLog from '../middleware/koa-experience-verifications-audit-log.js';
 import { type ExperienceInteractionRouterContext } from '../types.js';
 
+import { registrarEventosTe } from './te-channel-eventos.js';
+
 /**
  * LOGTO PATCH(te-channel-proxy): rutas del canal TripleEnable, servidas por Logto en su propio
  * origen y proxeadas servidor a servidor hacia te-api.
@@ -84,6 +86,10 @@ export default function teChannelRoutes<T extends ExperienceInteractionRouterCon
   tenantContext: TenantContext
 ) {
   const { libraries, queries, connectors, provider, envSet } = tenantContext;
+
+  // LOGTO PATCH(te-senalizacion): el aviso en tiempo real vive en su propio
+  // fichero — ver `te-channel-eventos.ts` para el porqué de cada decisión.
+  registrarEventosTe(router, prefijo, provider);
 
   /**
    * El nivelador de errores se registra como capa de prefijo, no como middleware de cada ruta, y
