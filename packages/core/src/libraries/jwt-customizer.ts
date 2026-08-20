@@ -1,56 +1,35 @@
-/* eslint-disable max-lines -- The legacy `node:vm` and Azure Functions paths coexist with the script-runner adapters until LOG-13956 and LOG-13958 remove them. */
 import {
+  adminTenantId,
   type CustomJwtErrorBody,
   CustomJwtErrorCode,
   jwtCustomizerUserContextGuard,
   userInfoSelectFields,
   type CustomJwtFetcher,
-  type JwtCustomizerType,
   type JwtCustomizerUserContext,
   type JwtCustomizerApplicationContext,
   type JwtCustomizerOrganizationContext,
   jwtCustomizerOrganizationContextGuard,
-  type LogtoJwtTokenKey,
-  type CustomJwtApiContext,
   type CustomJwtScriptPayload,
   jsonObjectGuard,
   isBuiltInApplicationId,
   buildBuiltInApplicationDataForTenant,
 } from '@logto/schemas';
-import { type ConsoleLog } from '@logto/shared';
-import {
-  assert,
-  deduplicate,
-  type Optional,
-  pick,
-  pickState,
-  trySafe,
-} from '@silverhand/essentials';
-import deepmerge from 'deepmerge';
+import { deduplicate, type Optional, pick, pickState, trySafe } from '@silverhand/essentials';
 import { got, HTTPError } from 'got';
 import { type UnknownObject } from 'oidc-provider';
-import { ZodError, z } from 'zod';
+import { z } from 'zod';
 
 import { EnvSet } from '#src/env-set/index.js';
-import RequestError from '#src/errors/RequestError/index.js';
-import type { LogtoConfigLibrary } from '#src/libraries/logto-config.js';
 import { type ScopeLibrary } from '#src/libraries/scope.js';
+import { type SubscriptionLibrary } from '#src/libraries/subscription.js';
 import { type UserLibrary } from '#src/libraries/user.js';
 import type Queries from '#src/tenants/Queries.js';
-import {
-  getJwtCustomizerScripts,
-  type CustomJwtDeployRequestBody,
-  parseAzureFunctionsResponseError,
-} from '#src/utils/custom-jwt/index.js';
-import { runScriptFunctionInLocalVm } from '#src/utils/local-vm/index.js';
+import { parseAzureFunctionsResponseError } from '#src/utils/custom-jwt/index.js';
 
 import { type CloudConnectionLibrary } from './cloud-connection.js';
 import {
   buildCloudScriptFailureError,
-  buildScriptExecutionErrorBody,
   buildScriptFailureError,
-  getScriptFailureStatusCode,
-  parseCloudScriptFailure,
   runScriptOnCloud,
   runScriptOnWorkerPool,
   ScriptExecutionError,
@@ -73,21 +52,9 @@ const buildAccessDeniedError = (message: string) => {
   return new ScriptExecutionError({ message, error }, scriptFailureStatusCodes.denied);
 };
 
-const apiContext: CustomJwtApiContext = Object.freeze({
-  denyAccess: (message = 'Access denied') => {
-    throw buildAccessDeniedError(message);
-  },
-});
-
 export class JwtCustomizerLibrary {
   // Convert failures to WithTyped client response errors to share the error handling logic.
-  static async runScriptInLocalVm(data: CustomJwtFetcher, tenantId: string) {
-    // TODO (LOG-13956): drop the legacy `node:vm` path and the gate once the worker-thread
-    // runner has been manually verified and released.
-    if (!EnvSet.values.isDevFeaturesEnabled) {
-      return JwtCustomizerLibrary.runScriptInLegacyVm(data);
-    }
-
+  static async runScriptLocally(data: CustomJwtFetcher, tenantId: string) {
     /**
      * `api` is not part of the payload: functions cannot cross the structured-clone boundary, so
      * the worker constructs `denyAccess` itself and reports a denial as a `denied` failure.
@@ -136,46 +103,11 @@ export class JwtCustomizerLibrary {
     return parsed.data;
   }
 
-  /** The pre-worker-runner execution path, still serving production until the gate above lifts. */
-  private static async runScriptInLegacyVm(data: CustomJwtFetcher) {
-    try {
-      const payload: CustomJwtScriptPayload = {
-        ...pick(data, 'token', 'context', 'environmentVariables'),
-        api: apiContext,
-      };
-
-      const result = await runScriptFunctionInLocalVm(data.script, 'getCustomJwtClaims', payload);
-
-      // If the `result` is not a record, we cannot merge it to the existing token payload.
-      return z.record(z.unknown()).parse(result);
-    } catch (error: unknown) {
-      if (error instanceof ScriptExecutionError) {
-        throw error;
-      }
-
-      // Assuming we only use zod for request body validation
-      if (error instanceof ZodError) {
-        const { errors } = error;
-        throw new ScriptExecutionError(
-          {
-            message: 'Invalid input',
-            errors,
-          },
-          400
-        );
-      }
-
-      throw new ScriptExecutionError(
-        buildScriptExecutionErrorBody(error),
-        getScriptFailureStatusCode(error)
-      );
-    }
-  }
-
   constructor(
+    private readonly tenantId: string,
     private readonly queries: Queries,
-    private readonly logtoConfigs: LogtoConfigLibrary,
     private readonly cloudConnection: CloudConnectionLibrary,
+    private readonly subscription: SubscriptionLibrary,
     private readonly userLibrary: UserLibrary,
     private readonly scopeLibrary: ScopeLibrary
   ) {}
@@ -270,123 +202,9 @@ export class JwtCustomizerLibrary {
   }
 
   /**
-   * This method is used to deploy the give JWT customizer scripts to the cloud worker service.
-   *
-   * @remarks Since cloud worker service deploy all the JWT customizer scripts at once,
-   * and the latest JWT customizer updates needs to be deployed ahead before saving it to the database,
-   * we need to merge the input payload with the existing JWT customizer scripts.
-   *
-   * @params payload - The latest JWT customizer payload needs to be deployed.
-   * @params payload.key - The tokenType of the JWT customizer.
-   * @params payload.value - JWT customizer value
-   * @params payload.useCase - The use case of JWT customizer script, can be either `test` or `production`.
-   *
-   * @remarks
-   * Deliberately left outside the `isDevFeaturesEnabled` gate that {@link runScriptRemotely} is
-   * behind, so this and {@link undeployJwtCustomizerScript} keep the worker service in sync while
-   * the legacy `POST /api/services/custom-jwt` path is still one rollback away from serving
-   * production. The cost is real and accepted: with dev features on and no Azure app configured,
-   * every save, delete and Console "test" still pays a deploy whose result the script run no
-   * longer reads. Both come out with the legacy paths in LOG-13958.
-   */
-  async deployJwtCustomizerScript<T extends LogtoJwtTokenKey>(
-    consoleLog: ConsoleLog,
-    payload: {
-      key: T;
-      value: JwtCustomizerType[T];
-      useCase: 'test' | 'production';
-    }
-  ) {
-    if (!EnvSet.values.isCloud) {
-      consoleLog.warn(
-        'Early terminate `deployJwtCustomizerScript` since we do not provide dedicated computing resource for OSS version.'
-      );
-      return;
-    }
-
-    if (this.isRegionalAzureFunctionAppConfigured) {
-      consoleLog.info(
-        'Skipping Cloudflare Workers deployment since regional Azure Function App is configured.'
-      );
-      return;
-    }
-
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment, @typescript-eslint/prefer-ts-expect-error
-    // @ts-ignore TS2589: caused by router type growth from @logto/cloud
-    const [client, jwtCustomizers] = await Promise.all([
-      this.cloudConnection.getClient(),
-      this.logtoConfigs.getJwtCustomizers(consoleLog),
-    ]);
-
-    const customizerScriptsFromDatabase = getJwtCustomizerScripts(jwtCustomizers);
-
-    const newCustomizerScripts: CustomJwtDeployRequestBody = {
-      /**
-       * There are at most 4 custom JWT scripts in the `CustomJwtDeployRequestBody`-typed object,
-       * and can be indexed by `data[CustomJwtType][UseCase]`.
-       *
-       * Per our design, each script will be deployed as a API endpoint in the Cloudflare
-       * worker service. A production script will be deployed to `/api/custom-jwt`
-       * endpoint and a test script will be deployed to `/api/custom-jwt/test` endpoint.
-       *
-       * If the current use case is `test`, then the script should be deployed to a `/test` endpoint;
-       * otherwise, the script should be deployed to the `/api/custom-jwt` endpoint and overwrite
-       * previous handler of the API endpoint.
-       */
-      [payload.key]: { [payload.useCase]: payload.value.script },
-    };
-
-    await client.put(`/api/services/custom-jwt/worker`, {
-      body: deepmerge(customizerScriptsFromDatabase, newCustomizerScripts),
-    });
-  }
-
-  async undeployJwtCustomizerScript<T extends LogtoJwtTokenKey>(consoleLog: ConsoleLog, key: T) {
-    if (!EnvSet.values.isCloud) {
-      consoleLog.warn(
-        'Early terminate `undeployJwtCustomizerScript` since we do not deploy the script to dedicated computing resource for OSS version.'
-      );
-      return;
-    }
-
-    if (this.isRegionalAzureFunctionAppConfigured) {
-      consoleLog.info(
-        'Skipping Cloudflare Workers undeployment since regional Azure Function App is configured.'
-      );
-      return;
-    }
-
-    const [client, jwtCustomizers] = await Promise.all([
-      this.cloudConnection.getClient(),
-      this.logtoConfigs.getJwtCustomizers(consoleLog),
-    ]);
-
-    assert(jwtCustomizers[key], new RequestError({ code: 'entity.not_exists', name: key }));
-
-    // Undeploy the worker directly if the only JWT customizer is being deleted.
-    if (Object.entries(jwtCustomizers).length === 1) {
-      await client.delete(`/api/services/custom-jwt/worker`);
-      return;
-    }
-
-    // Remove the JWT customizer script (of given `key`) from the existing JWT customizer scripts and redeploy.
-    const customizerScriptsFromDatabase = getJwtCustomizerScripts(jwtCustomizers);
-    const newCustomizerScripts: CustomJwtDeployRequestBody = {
-      [key]: {
-        production: undefined,
-        test: undefined,
-      },
-    };
-
-    await client.put(`/api/services/custom-jwt/worker`, {
-      body: deepmerge(customizerScriptsFromDatabase, newCustomizerScripts),
-    });
-  }
-
-  /**
    * @remarks
    * For Logto cloud use only. Run the custom JWT claims script remotely in an isolated environment.
-   * For OSS version, use @see JwtCustomizerLibrary.runScriptInLocalVm instead.
+   * For OSS version, use @see JwtCustomizerLibrary.runScriptLocally instead.
    *
    * @param payload - The custom JWT fetcher payload.
    * @param isTest - Whether to run the script in test mode.
@@ -395,10 +213,38 @@ export class JwtCustomizerLibrary {
     payload: CustomJwtFetcher,
     isTest?: boolean
   ): Promise<Optional<UnknownObject>> {
-    // TODO (LOG-13958): drop the legacy remote paths and the gate once the Cloud script runner
-    // has been manually verified and released.
-    if (!EnvSet.values.isDevFeaturesEnabled) {
-      return this.runScriptOnLegacyRuntime(payload, isTest);
+    /**
+     * The plan quota is enforced here rather than left to the transport: the runner only verifies
+     * audience and scope, so without this check the script of a downgraded tenant would keep
+     * running and injecting its claims into every issued token.
+     *
+     * The Management API routes carry `koaQuotaGuard` already, so this only ever fires on the
+     * issuance path, where no guard runs. Mirrors `ActionLibrary.isActionsEnabledByQuota`.
+     *
+     * Returning here rather than throwing is the intended behavior, and matches what
+     * `ActionLibrary.runAction` does for its own quota check: a plan downgrade must not break
+     * token issuance. The caller reads this as "no custom claims", so a customizer configured
+     * with `blockIssuanceOnError` still gets its token — the quota is not a script error.
+     *
+     * Checked before runtime selection so a downgraded tenant never reaches Azure Functions
+     * either: that path throws a 422 when the function app is unset, which would otherwise
+     * break issuance when `blockIssuanceOnError` is on.
+     */
+    if (!(await this.isCustomJwtEnabledByQuota())) {
+      return;
+    }
+
+    /**
+     * The Azure Functions runtime is kept as a per-region fallback rather than retired: on a
+     * region whose untrusted function app is configured, a script runner outage is routed around
+     * by unsetting `SCRIPT_RUNNER_ENDPOINT` there, with no code change and no coordinated
+     * rollback. Where that app is not configured this runtime throws a 422, matching what
+     * `ActionLibrary` already does.
+     */
+    const { scriptRunnerEndpoint } = EnvSet.values;
+
+    if (!scriptRunnerEndpoint) {
+      return this.runScriptOnAzureFunction(payload);
     }
 
     /**
@@ -406,77 +252,96 @@ export class JwtCustomizerLibrary {
      * The runner merges it in inside the isolate and reports a denial as a `denied` failure,
      * exactly like the worker-thread runner does.
      */
-    const value = await this.postScriptRun(payload, isTest);
+    const value = await this.postScriptRun(payload, scriptRunnerEndpoint, isTest);
 
     return JwtCustomizerLibrary.parseScriptResultValue(value);
   }
 
   /**
-   * The pre-script-runner remote paths, still serving production until the gate above lifts:
-   * the regional untrusted Azure Function app where configured, otherwise the deprecated
-   * `POST /api/services/custom-jwt` cloud endpoint.
+   * Whether the tenant's plan allows running a custom JWT script.
+   *
+   * OSS and the admin tenant are never metered; every other tenant reads the cached subscription
+   * quota.
    */
-  private async runScriptOnLegacyRuntime(
-    payload: CustomJwtFetcher,
-    isTest?: boolean
+  private async isCustomJwtEnabledByQuota(): Promise<boolean> {
+    const { isCloud } = EnvSet.values;
+
+    if (!isCloud || this.tenantId === adminTenantId) {
+      return true;
+    }
+
+    const { quota } = await this.subscription.getSubscriptionData();
+
+    return quota.customJwtEnabled;
+  }
+
+  /**
+   * The Azure Functions runtime, kept as the per-region fallback for the Cloud script runner.
+   *
+   * Selected whenever `SCRIPT_RUNNER_ENDPOINT` is unset. `isTest` is deliberately not forwarded:
+   * this runtime has no notion of a dry run, and nothing is lost by it — vm2 builds a fresh VM per
+   * call, so a test run can never share state with production the way a warm isolate could.
+   */
+  private async runScriptOnAzureFunction(
+    payload: CustomJwtFetcher
   ): Promise<Optional<UnknownObject>> {
     const { azureFunctionUntrustedAppKey, azureFunctionUntrustedAppEndpoint } = EnvSet.values;
 
-    if (this.isRegionalAzureFunctionAppConfigured) {
-      try {
-        const result = await got
-          .post(new URL('/api/custom-jwt', azureFunctionUntrustedAppEndpoint), {
-            json: payload,
-            headers: {
-              'x-functions-key': azureFunctionUntrustedAppKey,
-            },
-          })
-          .json<unknown>();
-
-        const parsedResult = jsonObjectGuard.parse(result);
-        return parsedResult;
-      } catch (error: unknown) {
-        // Convert got HTTPError to WithTyped client ResponseError for unified error handling.
-        if (error instanceof HTTPError) {
-          throw parseAzureFunctionsResponseError(error);
-        }
-
-        throw error;
-      }
+    /**
+     * Neither runtime is reachable. Named explicitly rather than left to `new URL()` throwing an
+     * opaque `Invalid URL`, since this misconfiguration reaches the RP as an `error_description`
+     * when the customizer sets `blockIssuanceOnError`.
+     */
+    if (!this.isRegionalAzureFunctionAppConfigured) {
+      throw new ScriptExecutionError({ message: 'Remote script runner is not configured.' }, 422);
     }
 
-    // Fallback to use cloud connection to call the custom JWT API.
-    const client = await this.cloudConnection.getClient();
-    return client.post(`/api/services/custom-jwt`, {
-      body: payload,
-      search: isTest ? { isTest: 'true' } : {},
-    });
+    try {
+      const result = await got
+        .post(new URL('/api/custom-jwt', azureFunctionUntrustedAppEndpoint), {
+          json: payload,
+          headers: {
+            'x-functions-key': azureFunctionUntrustedAppKey,
+          },
+        })
+        .json<unknown>();
+
+      return jsonObjectGuard.parse(result);
+    } catch (error: unknown) {
+      // Convert got HTTPError to WithTyped client ResponseError for unified error handling.
+      if (error instanceof HTTPError) {
+        throw parseAzureFunctionsResponseError(error);
+      }
+
+      throw error;
+    }
   }
 
   /**
    * Post the run to the Cloud script runner, mapping a script failure onto the same
    * `ScriptExecutionError` the local runners produce.
    */
-  private async postScriptRun(payload: CustomJwtFetcher, isTest?: boolean): Promise<unknown> {
-    try {
-      return await runScriptOnCloud({
-        cloudConnection: this.cloudConnection,
-        script: payload.script,
-        entry: 'getCustomJwtClaims',
-        payload: pick(payload, 'token', 'context', 'environmentVariables'),
-        isTest,
-      });
-    } catch (error: unknown) {
-      const failure = await parseCloudScriptFailure(error);
+  private async postScriptRun(
+    payload: CustomJwtFetcher,
+    endpoint: string,
+    isTest?: boolean
+  ): Promise<unknown> {
+    const result = await runScriptOnCloud({
+      cloudConnection: this.cloudConnection,
+      endpoint,
+      tenantId: this.tenantId,
+      script: payload.script,
+      entry: 'getCustomJwtClaims',
+      payload: pick(payload, 'token', 'context', 'environmentVariables'),
+      isTest,
+    });
 
-      if (!failure) {
-        throw error;
-      }
-
-      throw failure.kind === 'denied'
-        ? buildAccessDeniedError(failure.message)
-        : buildCloudScriptFailureError(failure);
+    if (!result.ok) {
+      throw result.kind === 'denied'
+        ? buildAccessDeniedError(result.message)
+        : buildCloudScriptFailureError(result);
     }
+
+    return result.value;
   }
 }
-/* eslint-enable max-lines */

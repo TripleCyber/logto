@@ -1,9 +1,10 @@
-import { cimdConfigGuard } from '@logto/schemas';
+import { cimdConfigGuard, ProductEvent } from '@logto/schemas';
 
 import { EnvSet } from '#src/env-set/index.js';
 import RequestError from '#src/errors/RequestError/index.js';
 import koaGuard from '#src/middleware/koa-guard.js';
 import assertThat from '#src/utils/assert-that.js';
+import { captureEvent } from '#src/utils/posthog.js';
 
 import type { ManagementApiRouter, RouterInitArgs } from '../types.js';
 
@@ -14,10 +15,7 @@ import type { ManagementApiRouter, RouterInitArgs } from '../types.js';
 export default function logtoConfigCimdRoutes<T extends ManagementApiRouter>(
   ...[router, tenant]: RouterInitArgs<T>
 ) {
-  if (!EnvSet.values.isDevFeaturesEnabled) {
-    return;
-  }
-
+  const { id: tenantId } = tenant;
   const { getCimdConfig, upsertCimdConfig } = tenant.queries.logtoConfigs;
 
   router.get(
@@ -59,10 +57,19 @@ export default function logtoConfigCimdRoutes<T extends ManagementApiRouter>(
         )
       );
 
-      const updated = { ...(await getCimdConfig()), ...body };
+      const current = await getCimdConfig();
+      const updated = { ...current, ...body };
       await upsertCimdConfig(updated);
 
       ctx.body = updated;
+
+      // Only capture the event when the switch actually flips.
+      if (current.enabled !== updated.enabled) {
+        captureEvent(
+          { tenantId, request: ctx.req },
+          updated.enabled ? ProductEvent.DynamicAppEnabled : ProductEvent.DynamicAppDisabled
+        );
+      }
 
       // The switch is applied at provider construction; rebuild the tenant on the next request.
       void tenant.invalidateCache();

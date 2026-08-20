@@ -42,9 +42,10 @@ describe('trusted device queries', () => {
     jest.restoreAllMocks();
   });
 
-  it('inserts a trusted device record', async () => {
+  it('inserts a trusted device record once per device ID', async () => {
     mockQuery.mockImplementationOnce(async (query, values) => {
       expect(query).toMatch(/insert into "trusted_devices"/i);
+      expect(query).toMatch(/on conflict \("id"\) do nothing/i);
       expect(values).toEqual([
         trustedDevice.id,
         trustedDevice.userId,
@@ -60,17 +61,30 @@ describe('trusted device queries', () => {
     });
 
     await expect(
-      queries.insert({
+      queries.insertIfNotExists({
         id: trustedDevice.id,
         userId: trustedDevice.userId,
         secretHash: trustedDevice.secretHash,
-        userAgent: trustedDevice.userAgent,
-        ip: trustedDevice.ip,
-        country: trustedDevice.country,
-        city: trustedDevice.city,
+        userAgent: trustedDevice.userAgent ?? undefined,
+        ip: trustedDevice.ip ?? undefined,
+        country: trustedDevice.country ?? undefined,
+        city: trustedDevice.city ?? undefined,
         expiresAt: trustedDevice.expiresAt,
       })
     ).resolves.toEqual(trustedDevice);
+  });
+
+  it('returns null when the device ID already exists', async () => {
+    mockQuery.mockResolvedValueOnce(createMockQueryResult([]));
+
+    await expect(
+      queries.insertIfNotExists({
+        id: trustedDevice.id,
+        userId: trustedDevice.userId,
+        secretHash: trustedDevice.secretHash,
+        expiresAt: trustedDevice.expiresAt,
+      })
+    ).resolves.toBeNull();
   });
 
   it('uses the same strict active predicate for paginated list and count', async () => {
@@ -126,14 +140,16 @@ describe('trusted device queries', () => {
     ).resolves.toEqual(trustedDevice);
   });
 
-  it('updates metadata without overwriting missing values and replaces a supplied location pair', async () => {
+  it('updates active-device metadata without overwriting missing values and replaces a supplied location pair', async () => {
     jest.spyOn(Date, 'now').mockReturnValue(123_000);
 
     const expectSql = sql`
       update ${table}
       set ${fields.lastUsedAt}=to_timestamp($1::double precision / 1000), ${fields.userAgent}=$2, ${fields.country}=$3, ${fields.city}=$4
-      where ${fields.id}=$5 and ${fields.userId}=$6
-      returning *
+      where ${fields.id} = $5
+        and ${fields.userId} = $6
+        and ${fields.expiresAt} > now()
+      returning ${expandFields(TrustedDevices)}
     `;
 
     mockQuery.mockImplementationOnce(async (query, values) => {
@@ -157,23 +173,42 @@ describe('trusted device queries', () => {
     ).resolves.toEqual(trustedDevice);
   });
 
-  it('deletes only the presented owned record at the expiry boundary', async () => {
+  it('preserves the existing location when request metadata has no location', async () => {
+    jest.spyOn(Date, 'now').mockReturnValue(123_000);
+
     const expectSql = sql`
-      delete from ${table}
-      where ${fields.id} = $1
-        and ${fields.userId} = $2
-        and ${fields.expiresAt} <= now()
+      update ${table}
+      set ${fields.lastUsedAt}=to_timestamp($1::double precision / 1000), ${fields.userAgent}=$2
+      where ${fields.id} = $3
+        and ${fields.userId} = $4
+        and ${fields.expiresAt} > now()
+      returning ${expandFields(TrustedDevices)}
     `;
 
     mockQuery.mockImplementationOnce(async (query, values) => {
       expectSqlAssert(query, expectSql.sql);
-      expect(values).toEqual([trustedDevice.id, trustedDevice.userId]);
+      expect(values).toEqual([123_000, 'new-user-agent', trustedDevice.id, trustedDevice.userId]);
       return createMockQueryResult([trustedDevice]);
     });
 
     await expect(
-      queries.deleteExpiredByIdAndUserId(trustedDevice.id, trustedDevice.userId)
-    ).resolves.toBe(1);
+      queries.updateMetadataByIdAndUserId(trustedDevice.id, trustedDevice.userId, {
+        userAgent: 'new-user-agent',
+      })
+    ).resolves.toEqual(trustedDevice);
+  });
+
+  it('returns null when metadata cannot be updated for an inactive or missing device', async () => {
+    mockQuery.mockImplementationOnce(async (query, values) => {
+      expect(query).toMatch(/and "expires_at" > now\(\)/i);
+      expect(query).not.toMatch(/"last_used_at" < to_timestamp/i);
+      expect(values).toEqual([expect.any(Number), trustedDevice.id, trustedDevice.userId]);
+      return createMockQueryResult([]);
+    });
+
+    await expect(
+      queries.updateMetadataByIdAndUserId(trustedDevice.id, trustedDevice.userId, {})
+    ).resolves.toBeNull();
   });
 
   it('deletes a record only when both its ID and owner match', async () => {

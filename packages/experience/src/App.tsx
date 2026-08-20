@@ -51,7 +51,6 @@ import SingleSignOnLanding from './pages/SingleSignOnLanding';
 import SocialLanding from './pages/SocialLanding';
 import SocialLinkAccount from './pages/SocialLinkAccount';
 import SocialSignInWebCallback from './pages/SocialSignInWebCallback';
-import Springboard from './pages/Springboard';
 import SwitchAccount from './pages/SwitchAccount';
 import VerificationCode from './pages/VerificationCode';
 /* LOGTO PATCH(te-qr-desktop) + LOGTO PATCH(te-factor-choice): pantallas propias del canal. */
@@ -101,7 +100,6 @@ const App = () => {
               <AppBoundary>
                 <Routes>
                   <Route element={<LoadingLayerProvider />}>
-                    <Route path="springboard" element={<Springboard />} />
                     <Route path="callback/:connectorId" element={<Callback />} />
                     <Route
                       path="callback/social/:connectorId"

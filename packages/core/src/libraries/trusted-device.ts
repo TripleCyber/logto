@@ -1,13 +1,18 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 
-import { TrustedDevices } from '@logto/schemas';
-import { generateStandardId } from '@logto/shared';
+import {
+  TrustedDevices,
+  type ManagementApiContext,
+  type TrustedDevice,
+  type TrustedDeviceEventData,
+} from '@logto/schemas';
 import { trySafe } from '@silverhand/essentials';
 import { type Context } from 'koa';
 
 import { EnvSet } from '#src/env-set/index.js';
 import type { TrustedDeviceMetadata, TrustedDeviceQueries } from '#src/queries/trusted-device.js';
 
+import type { HookContextManager } from './hook/context-manager.js';
 import type { createTrustedDevicePolicyLibrary } from './trusted-device-policy.js';
 
 const trustedDeviceSecretByteLength = 32;
@@ -34,10 +39,19 @@ type TrustedDeviceLibraryOptions = Readonly<{
 type CreateTrustedDeviceCredential = TrustedDeviceMetadata &
   Readonly<{
     ctx: TrustedDeviceCookieContext;
+    deviceId: string;
     userId: string;
   }>;
 
 type TrustedDevicePolicyLibrary = ReturnType<typeof createTrustedDevicePolicyLibrary>;
+
+type TrustedDeviceLifecycleContext = Pick<HookContextManager, 'appendDataHookContext'>;
+
+export const getTrustedDeviceEventData = ({
+  id,
+  userId,
+  expiresAt,
+}: TrustedDevice): TrustedDeviceEventData => ({ id, userId, expiresAt });
 
 export const getTrustedDeviceCookieName = (
   tenantId: string,
@@ -181,25 +195,37 @@ export const createTrustedDeviceLibrary = (
     return deletedCount;
   };
 
-  const createCredential = async ({ ctx, userId, ...metadata }: CreateTrustedDeviceCredential) => {
+  const createCredential = async ({
+    ctx,
+    deviceId,
+    userId,
+    ...metadata
+  }: CreateTrustedDeviceCredential) => {
     const policy = await policyLibrary.getEffectivePolicy(userId);
 
     if (!policy.enabled) {
       return;
     }
 
-    const id = generateStandardId();
     const secret = generateTrustedDeviceSecret();
     const secretHash = hashTrustedDeviceSecret(secret);
     const expiresAt = Date.now() + policy.durationDays * dayInMilliseconds;
-    const trustedDevice = await queries.insert({
-      id,
+    const trustedDevice = await queries.insertIfNotExists({
+      id: deviceId,
       userId,
       secretHash,
       expiresAt,
       ...metadata,
     });
-    const credential = { id, secret };
+
+    // Another submit with the same creation intent may have won the insert race. Only the winner
+    // writes its matching random credential, so a late response can never replace the cookie
+    // with a credential whose record was not persisted.
+    if (!trustedDevice) {
+      return;
+    }
+
+    const credential = { id: deviceId, secret };
 
     writeCredential(ctx, userId, credential, trustedDevice.expiresAt);
     void cleanupExpired();
@@ -224,7 +250,6 @@ export const createTrustedDeviceLibrary = (
     const trustedDevice = await queries.findActiveByIdAndUserId(credential.id, userId);
 
     if (!trustedDevice) {
-      void trySafe(async () => queries.deleteExpiredByIdAndUserId(credential.id, userId));
       clearCredential(ctx, userId);
       return;
     }
@@ -237,11 +262,50 @@ export const createTrustedDeviceLibrary = (
     return trustedDevice;
   };
 
+  const updateMetadata = async (
+    trustedDeviceId: string,
+    userId: string,
+    metadata: TrustedDeviceMetadata
+  ) => {
+    const trustedDevice = await queries.updateMetadataByIdAndUserId(
+      trustedDeviceId,
+      userId,
+      metadata
+    );
+    void cleanupExpired();
+
+    return trustedDevice;
+  };
+
+  const deleteByIdAndUserId = async (
+    ctx: TrustedDeviceLifecycleContext,
+    id: string,
+    userId: string,
+    hookContext: Partial<ManagementApiContext> = {}
+  ) => {
+    const trustedDevice = await queries.deleteByIdAndUserId(id, userId);
+
+    if (!trustedDevice) {
+      return;
+    }
+
+    ctx.appendDataHookContext('TrustedDevice.Deleted', {
+      ...hookContext,
+      data: getTrustedDeviceEventData(trustedDevice),
+      // Trusted-device lifecycle payloads intentionally exclude the request IP.
+      includeRequestIp: false,
+    });
+
+    return trustedDevice;
+  };
+
   return {
     cleanupExpired,
     clearCredential,
     createCredential,
+    deleteByIdAndUserId,
     getCookieName,
+    updateMetadata,
     validateCredential,
     writeCredential,
   };
