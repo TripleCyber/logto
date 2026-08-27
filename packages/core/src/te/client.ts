@@ -224,16 +224,22 @@ export class TeApiClient {
    * Va el identificador de Logto y no el correo con el que la persona entró: te-api sólo resuelve
    * identificadores de su propio dominio, así que un correo externo no le sirve de nada. Logto es
    * quien conoce la equivalencia «esta persona ↔ este titular» y el único que puede afirmarla.
+   *
+   * **Es obligatorio, y por eso va antes que `deviceReference`.** La puerta de
+   * `POST …/te-channel/push` ya lo exige —ver `LOGTO PATCH(te-push-primer-factor)`—, pero un `if`
+   * en una ruta sólo protege a esa ruta: mientras el parámetro fuera opcional, el camino anónimo
+   * estaba a un argumento olvidado de volver, y volvería en silencio, porque un reto señuelo es
+   * indistinguible de un despacho real por diseño. Requerido, eso no compila.
    */
-  async despacharPush(txnId: string, deviceReference?: string, logtoUserId?: string) {
+  async despacharPush(txnId: string, logtoUserId: string, deviceReference?: string) {
     return this.#llamar(
       {
         metodo: 'POST',
         ruta: rutas.retosPush,
         cuerpo: {
           txnId,
+          logtoUserId,
           ...(deviceReference === undefined ? {} : { deviceRef: deviceReference }),
-          ...(logtoUserId === undefined ? {} : { logtoUserId }),
         },
       },
       retoPushGuard

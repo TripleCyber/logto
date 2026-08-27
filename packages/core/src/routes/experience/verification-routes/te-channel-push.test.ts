@@ -176,17 +176,45 @@ const handler = (metodo: 'get' | 'post', ruta: string): RouteHandler => {
   return ultimo as RouteHandler;
 };
 
+/**
+ * El titular que la interacción ya identificó, por defecto en todos los contextos.
+ *
+ * Lo normal es que exista: el push se ofrece **después** del primer factor, nunca
+ * antes. La interacción que todavía no ha identificado a nadie se pide con
+ * `withoutOwner: true`, y es lo que fija la puerta.
+ */
+const identifiedOwner = 'usuario-de-ana';
+
 const contexto = ({
   interactionEvent = InteractionEvent.SignIn,
   body,
   verifier,
+  identifiedUserId = identifiedOwner,
+  withoutOwner = false,
 }: {
   interactionEvent?: InteractionEvent;
   body?: unknown;
   verifier?: string;
+  identifiedUserId?: string;
+  /**
+   * «Esta interacción no ha identificado a nadie todavía».
+   *
+   * Es una bandera aparte y no `identifiedUserId: undefined` porque un
+   * `undefined` explícito **activa el valor por defecto** de la desestructuración:
+   * pedir el caso sin titular acabaría ejecutando el caso con titular, y el test
+   * pasaría sin probar nada.
+   */
+  withoutOwner?: boolean;
 } = {}) => ({
   experienceInteraction: {
     interactionEvent,
+    /**
+     * En la clase real es un getter sobre `this.userId`, privado, que sólo se
+     * asigna dentro de `identifyUser(verificationId)`. Aquí es un dato del doble
+     * porque el test no ejerce esa clase — lo que ejerce es qué hace la ruta con
+     * lo que ella le diga.
+     */
+    identifiedUserId: withoutOwner ? undefined : identifiedUserId,
     setVerificationRecord: jest.fn(),
     save: jest.fn(nada),
     skipCaptcha: jest.fn(),
@@ -218,6 +246,75 @@ beforeEach(() => {
   cliente.interruptores.mockResolvedValue({ qr: true, push: true });
 });
 
+/**
+ * LOGTO PATCH(te-push-primer-factor): la puerta, y lo que la hace valer.
+ *
+ * Pedir un push sin haber pasado un primer factor **no puede llegar a te-api**. Si
+ * llega, te-api cae a su camino anónimo y fabrica un reto señuelo: no funciona,
+ * pero tampoco se rechaza, y mientras «no hay primer factor» y «esta cuenta no
+ * tiene cartera» acaben en la misma respuesta muda, ninguna de las dos se puede
+ * explicar después.
+ *
+ * Por eso lo que se afirma aquí no es sólo que la ruta lance: es que el doble del
+ * cliente **no se llama**. Un test que sólo mirase el error pasaría igual con la
+ * llamada hecha y el señuelo ya creado al otro lado.
+ */
+describe('el push exige que la interacción haya identificado a alguien', () => {
+  const estadoPush = {
+    canal: 'push',
+    txnId: 'txn-1',
+    verificationId: 'verificacion-1',
+    connectorId: 'conector-te',
+  };
+
+  it('sin titular, te-api no llega a enterarse de que alguien pidió un push', async () => {
+    leerEstadoCanal.mockResolvedValue(estadoPush);
+
+    const ctx = contexto({ body: {}, withoutOwner: true });
+
+    // El error uniforme del canal — el mismo que el canal apagado, la sesión que
+    // no existe y te-api caído. Quien llama no aprende nada de la cuenta que
+    // nombró. `TeChannelError` es el interno: `koaTeChannelUniformErrors` lo
+    // convierte en el 400 genérico, y no ser un `RequestError` es justo lo que le
+    // impide pasar verbatim como hacen los dos códigos de configuración.
+    await expect(handler('post', `${prefijo}/push`)(ctx, siguiente)).rejects.toMatchObject({
+      name: 'TeChannelError',
+    });
+
+    // Lo que de verdad importa.
+    expect(cliente.despacharPush).not.toHaveBeenCalled();
+    // Y ninguna otra: la puerta se cierra antes de mirar siquiera si hay canal
+    // abierto, así que no se gasta una petición s2s ni una entrada de los cubos
+    // de tasa de te-api en una llamada que no debió existir.
+    expect(leerEstadoCanal).not.toHaveBeenCalled();
+    expect(cliente.interruptores).not.toHaveBeenCalled();
+    // Sin reto no hay `challengeId`, y sin `challengeId` el sondeo y `confirm`
+    // tampoco tienen por dónde entrar: `exigirReto` los para.
+    expect(escribirEstadoCanal).not.toHaveBeenCalled();
+  });
+
+  it('con titular sigue despachando, y el que viaja es el de la interacción', async () => {
+    leerEstadoCanal.mockResolvedValue(estadoPush);
+
+    /*
+     * El cuerpo trae además un `logtoUserId`, como el que mandaría alguien tocando
+     * el JavaScript de la página. De ahí la ruta sólo lee `deviceRef`: el titular
+     * lo pone el registro de verificación, que es estado del servidor y sólo
+     * existe si se pasó un factor de verdad. El navegador no puede nombrar a nadie.
+     */
+    await handler('post', `${prefijo}/push`)(
+      contexto({
+        body: { deviceRef: 'ref-3', logtoUserId: 'el-titular-de-otra-persona' },
+        identifiedUserId: 'usuario-de-quien-entró',
+      }),
+      siguiente
+    );
+
+    expect(cliente.despacharPush).toHaveBeenCalledWith('txn-1', 'usuario-de-quien-entró', 'ref-3');
+    expect(JSON.stringify(cliente.despacharPush.mock.calls)).not.toContain('otra-persona');
+  });
+});
+
 describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
   const estadoPush = {
     canal: 'push',
@@ -232,9 +329,11 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
     const ctx = contexto({ body: {} });
     await handler('post', `${prefijo}/push`)(ctx, siguiente);
 
-    // El tercer argumento es el titular que la interacción identificó: sin él,
-    // te-api no tiene a quién avisar y el reto nace señuelo.
-    expect(cliente.despacharPush).toHaveBeenCalledWith('txn-1', undefined, undefined);
+    // El segundo argumento es el titular que la interacción identificó: sin él,
+    // te-api no tiene a quién avisar y el reto nace señuelo. Va delante del
+    // dispositivo porque es obligatorio, y un parámetro requerido no puede ir
+    // detrás de uno opcional — la firma misma impide el despacho anónimo.
+    expect(cliente.despacharPush).toHaveBeenCalledWith('txn-1', identifiedOwner, undefined);
     expect(Object.keys(ctx.body as Record<string, unknown>)).toEqual([
       'challengeId',
       'expiresAt',
@@ -267,7 +366,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
       // Con abanico, te-api no manda `kind`. Que aquí se simule que sí es el punto: la
       // proyección es la segunda cerradura, y tiene que aguantar aunque el servidor cambie.
       cliente.estadoPush.mockResolvedValue({
-      retryAfterMs: 4000,
+        retryAfterMs: 4000,
         frame: { t: 'claimed' },
         despacho: { count: 3, kind: 'phone', lastSeen: 'today' },
       });
@@ -281,7 +380,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
     it('un nombre o un modelo no llegan al navegador aunque el servidor los mande', async () => {
       leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
       cliente.estadoPush.mockResolvedValue({
-      retryAfterMs: 4000,
+        retryAfterMs: 4000,
         frame: { t: 'claimed' },
         despacho: {
           count: 1,
@@ -306,7 +405,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
     it('un número absurdo se recorta en vez de creerse', async () => {
       leerEstadoCanal.mockResolvedValue({ ...estadoPush, challengeId: 'reto-1' });
       cliente.estadoPush.mockResolvedValue({
-      retryAfterMs: 4000,
+        retryAfterMs: 4000,
         frame: { t: 'claimed' },
         despacho: { count: 900 },
       });
@@ -425,7 +524,7 @@ describe('C3 · push y selector de dispositivos con PU-12 dentro', () => {
 
     await handler('post', `${prefijo}/push`)(contexto({ body: { deviceRef: 'ref-3' } }), siguiente);
 
-    expect(cliente.despacharPush).toHaveBeenCalledWith('txn-1', 'ref-3', undefined);
+    expect(cliente.despacharPush).toHaveBeenCalledWith('txn-1', identifiedOwner, 'ref-3');
   });
 });
 
