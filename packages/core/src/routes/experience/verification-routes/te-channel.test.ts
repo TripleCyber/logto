@@ -204,6 +204,14 @@ const contexto = ({
 } = {}) => ({
   experienceInteraction: {
     interactionEvent,
+    /**
+     * El titular que la interacción ya identificó. Aquí siempre hay uno para que
+     * los casos de este fichero midan lo suyo y no la puerta del push, que vive
+     * en `te-channel-push.test.ts`: sin esto, el rechazo del alta en `/push`
+     * pasaría por el motivo equivocado si alguien cambiase el orden de las dos
+     * comprobaciones.
+     */
+    identifiedUserId: 'usuario-de-ana',
     setVerificationRecord: jest.fn(),
     save: jest.fn(nada),
     skipCaptcha: jest.fn(),

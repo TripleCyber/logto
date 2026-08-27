@@ -418,6 +418,34 @@ export default function teChannelRoutes<T extends ExperienceInteractionRouterCon
 
       rechazarAlta(ctx.experienceInteraction.interactionEvent);
 
+      /**
+       * LOGTO PATCH(te-push-primer-factor): el push exige que la interacción ya
+       * haya identificado a alguien, y se comprueba **aquí**.
+       *
+       * Antes esto pasaba `identifiedUserId` sin mirarlo. Cuando nadie se había
+       * identificado viajaba `undefined`, te-api caía a su camino anónimo y el
+       * reto nacía señuelo: no funcionaba, pero tampoco se rechazaba. Esa
+       * ambigüedad es la que impedía decir la verdad después — mientras «no hay
+       * primer factor» y «esta cuenta no tiene cartera» acaban en la misma
+       * respuesta muda, ninguna de las dos se puede explicar.
+       *
+       * Y es lo que hace creíble el `logtoUserId` que se manda a te-api. No
+       * viene del navegador: `identifiedUserId` es `this.userId`, privado, y sólo
+       * se asigna dentro de `identifyUser(verificationId)` — el cliente manda un
+       * **identificador de verificación**, y el titular se deriva del registro
+       * ya verificado. Tocar el JavaScript de la página no permite nombrar a
+       * nadie; el registro es estado del servidor y sólo existe si se pasó un
+       * factor de verdad.
+       *
+       * El error es el uniforme del canal, como todo lo demás de aquí: quien
+       * llame sin primer factor no aprende nada de la cuenta que nombró.
+       */
+      const owner = ctx.experienceInteraction.identifiedUserId;
+
+      if (owner === undefined) {
+        throw new TeChannelError('push sin primer factor');
+      }
+
       const estado = await cargarEstado(ctx);
 
       if (estado.canal !== 'push') {
@@ -432,13 +460,11 @@ export default function teChannelRoutes<T extends ExperienceInteractionRouterCon
         throw new TeChannelError('canal push apagado en te-api');
       }
 
-      // El titular que esta interacción ya identificó. Sin él, te-api no tiene a
-      // quién avisar y el reto nace señuelo — ver `despacharPush`.
-      const reto = await cliente.despacharPush(
-        estado.txnId,
-        ctx.guard.body.deviceRef,
-        ctx.experienceInteraction.identifiedUserId
-      );
+      // El titular que esta interacción ya identificó, garantizado no nulo por la
+      // guarda de arriba. Que te-api lo reciba es lo que le permite distinguir a
+      // quien ya demostró quién es de quien sólo tecleó un identificador — y por
+      // tanto contestarle con la verdad en vez de con un señuelo.
+      const reto = await cliente.despacharPush(estado.txnId, owner, ctx.guard.body.deviceRef);
 
       await escribirEstadoCanal(ctx, provider, { ...estado, challengeId: reto.challengeId });
 
