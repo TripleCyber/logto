@@ -107,7 +107,17 @@ const origenDe = (redirectUris?: readonly string[]): string | undefined =>
  * contrato haría que te-api rechazara el cuerpo con un 400 y el login se caería por una etiqueta
  * de adorno. Aquí la regla es siempre la misma: perder el nombre, nunca el acceso.
  */
-const topes = { nombre: 256, origen: 512, logo: 2048, id: 128 } as const;
+const topes = { nombre: 256, origen: 512, logo: 2048, id: 128, color: 7 } as const;
+
+/**
+ * Un color de marca sólo viaja si tiene la forma que te-api admite: `#RRGGBB`.
+ *
+ * La consola guarda `PartialColor`, así que la clave puede no estar; y aunque
+ * esté, mandar algo que el esquema del otro lado rechace tiraría el login entero
+ * por un adorno. Misma regla que el resto: **perder el color, nunca el acceso**.
+ */
+const esColor = (valor: string | undefined): string | undefined =>
+  valor !== undefined && /^#[\da-f]{6}$/i.test(valor) ? valor : undefined;
 
 const cabe = (valor: string | undefined, tope: number): string | undefined =>
   valor !== undefined && valor !== '' && valor.length <= tope ? valor : undefined;
@@ -115,12 +125,20 @@ const cabe = (valor: string | undefined, tope: number): string | undefined =>
 /** La forma que viaja a te-api, sin claves con `undefined` dentro del cuerpo firmado. */
 const componer = (
   id: string,
-  datos: { nombre?: string; origen?: string; logo?: string }
+  datos: {
+    nombre?: string;
+    origen?: string;
+    logo?: string;
+    color?: string;
+    colorOscuro?: string;
+  }
 ): AplicacionRp => ({
   id,
   ...conditional(cabe(datos.nombre, topes.nombre) && { name: datos.nombre }),
   ...conditional(cabe(datos.origen, topes.origen) && { origin: datos.origen }),
   ...conditional(cabe(datos.logo, topes.logo) && { logoUrl: datos.logo }),
+  ...conditional(esColor(datos.color) && { color: datos.color }),
+  ...conditional(esColor(datos.colorOscuro) && { darkColor: datos.colorOscuro }),
 });
 
 /**
@@ -157,6 +175,12 @@ const resolverDesdeCatalogo = async (clientId: string, queries: Queries): Promis
     nombre: displayName ?? name,
     origen: origenDe(aplicacion.oidcClientMetadata.redirectUris),
     logo: branding?.logoUrl,
+    // **El color va con el logotipo, y por lo mismo.** La consola los pone en
+    // el mismo sitio —la pestaña de marca de la aplicación— y sirven para lo
+    // mismo: que quien mira el teléfono reconozca de un vistazo dónde está
+    // entrando. Mandar el logo sin el color deja la pantalla a medio vestir.
+    color: experiencia?.color?.primaryColor,
+    colorOscuro: experiencia?.color?.darkPrimaryColor,
   });
 };
 

@@ -84,6 +84,18 @@ export type AplicacionRp = {
    */
   origin?: string;
   logoUrl?: string;
+  /**
+   * **El color de marca de la aplicación**, en `#RRGGBB`, y su variante para
+   * tema oscuro. Salen de `application_sign_in_experiences.color`, que es lo que
+   * la consola deja poner por aplicación — o sea un acto del servidor, como el
+   * nombre y el logotipo, y no algo que el navegador mande.
+   *
+   * te-api los guarda en la fila de la petición y la cartera los usa para
+   * vestir la pantalla de aprobación. **No decide nada**: la cartera mide el
+   * contraste antes de usarlos y se queda con su acento si no llegan.
+   */
+  color?: string;
+  darkColor?: string;
 };
 
 export const confirmacionGuard = z.object({
